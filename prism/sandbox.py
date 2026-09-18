@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -21,6 +22,8 @@ import psutil
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE_FILE = ROOT / "cache" / "exec_cache.jsonl"
+DETAIL_FILE = ROOT / "cache" / "exec_detail.jsonl"   # (status, stdout) per (code, stdin) — verifier features
+MAX_OUT = 4000
 
 PRELUDE = r'''
 import socket as _s, sys as _sys
@@ -77,6 +80,12 @@ class Sandbox:
         (self._tmp / "prelude.py").write_text(PRELUDE, encoding="utf-8")
         self._lock = threading.Lock()
         self.cache: dict[str, bool] = {}
+        self.detail: dict[str, tuple[str, str]] = {}
+        if DETAIL_FILE.exists():
+            with open(DETAIL_FILE, encoding="utf-8") as f:
+                for line in f:
+                    k, st, out = json.loads(line)
+                    self.detail[k] = (st, out)
         CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
         if CACHE_FILE.exists():
             with open(CACHE_FILE, encoding="utf-8") as f:
@@ -84,8 +93,8 @@ class Sandbox:
                     k, v = json.loads(line)
                     self.cache[k] = v
 
-    def _run_once(self, code: str, stdin: str) -> str | None:
-        """Return stdout, or None on crash/timeout/memory kill."""
+    def _exec(self, code: str, stdin: str) -> tuple[str, str]:
+        """Run once. Returns (status, stdout) with status in ok | crash | timeout | memory."""
         src = self._tmp / f"{_h(code)}.py"
         if not src.exists():
             src.write_text(code, encoding="utf-8")
@@ -97,34 +106,66 @@ class Sandbox:
                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                      cwd=wd, env=env)
             except OSError:
-                return None
-            killed = threading.Event()
-
-            def watchdog() -> None:
-                try:
-                    proc = psutil.Process(p.pid)
-                    while p.poll() is None:
-                        if proc.memory_info().rss > self.mem_mb * 2**20:
-                            killed.set()
-                            p.kill()
-                            return
-                        killed.wait(0.05)
-                except psutil.Error:
-                    pass
-
-            wt = threading.Thread(target=watchdog, daemon=True)
-            wt.start()
+                return "crash", ""
+            # single-threaded wait loop: poll RSS between short communicate() slices (no watchdog thread per run)
+            deadline = time.monotonic() + self.timeout
+            data: bytes | None = stdin.encode("utf-8")
             try:
-                out, _ = p.communicate(stdin.encode("utf-8"), timeout=self.timeout)
-            except subprocess.TimeoutExpired:
-                p.kill()
-                p.communicate()
-                return None
-            finally:
-                killed.set()
+                proc = psutil.Process(p.pid)
+            except psutil.Error:
+                proc = None
+            while True:
+                try:
+                    out, _ = p.communicate(data, timeout=0.05)
+                    break
+                except subprocess.TimeoutExpired:
+                    data = None  # input already sent
+                    try:
+                        if proc is not None and proc.memory_info().rss > self.mem_mb * 2**20:
+                            p.kill()
+                            p.communicate()
+                            return "memory", ""
+                    except psutil.Error:
+                        pass
+                    if time.monotonic() > deadline:
+                        p.kill()
+                        p.communicate()
+                        return "timeout", ""
             if p.returncode != 0:
-                return None
-            return out.decode("utf-8", "replace")
+                return "crash", out.decode("utf-8", "replace")[:MAX_OUT]
+            return "ok", out.decode("utf-8", "replace")[:MAX_OUT]
+
+    def _run_once(self, code: str, stdin: str) -> str | None:
+        """Return stdout, or None on crash/timeout/memory kill."""
+        status, out = self._exec(code, stdin)
+        return out if status == "ok" else None
+
+    def run_detail(self, code: str, stdin: str) -> tuple[str, str]:
+        """(status, stdout) with a persistent cache keyed by (execution semantics, code, stdin)."""
+        key = _h(_PRELUDE_ID, "detail", code, stdin)
+        hit = self.detail.get(key)
+        if hit is None:
+            hit = self._exec(code, stdin if stdin.endswith("\n") else stdin + "\n")
+            with self._lock:
+                self.detail[key] = hit
+                with open(DETAIL_FILE, "a", encoding="utf-8") as f:
+                    f.write(json.dumps([key, hit[0], hit[1]]) + "\n")
+        return hit
+
+    def details(self, code: str, tests: list[tuple[str, str]], max_tests: int = 5) -> list[tuple[str, str, str]]:
+        """Run samples in order and stop at the first one not passed exactly (same cost as fail-fast pass/fail);
+        passing programs are checked on up to max_tests samples. -> [(status, got, want)]"""
+        out = []
+        for inp, want in tests[:max_tests]:
+            st, got = self.run_detail(code, inp)
+            out.append((st, got, want))
+            if st != "ok" or not outputs_match(got, want):
+                break
+        return out
+
+    def details_many(self, jobs: list[tuple[str, list[tuple[str, str]]]], max_tests: int = 5):
+        with ThreadPoolExecutor(self.workers) as ex:
+            return list(ex.map(lambda j: self.details(j[0], j[1], max_tests), jobs))
 
     def check(self, code: str, tests: list[tuple[str, str]], max_tests: int = 3) -> float:
         """Fraction of (up to max_tests) sample tests passed; stops at the first failure (fail-fast)."""

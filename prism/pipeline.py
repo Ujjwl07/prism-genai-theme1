@@ -16,7 +16,7 @@ import numpy as np
 
 from .encoders import Encoder
 from .query import parse, reduced
-from .sandbox import Sandbox
+from .sandbox import Sandbox, outputs_match
 
 VARIANTS = {
     "raw": lambda t: t,
@@ -39,6 +39,8 @@ class PipelineConfig:
     gate_margin: float | None = None  # skip execution when top1-top2 dense margin exceeds this (None = always run)
     expand_k: int = 0              # refine round: if nothing in top exec_top_k passes, verify ranks up to expand_k
     final_top_k: int = 100
+    verifier: str | None = None    # path to a trained LEVER-style verifier (V6); None = pass/fail bonus rule
+    verifier_max_tests: int = 5
 
 
 @dataclass
@@ -50,6 +52,7 @@ class QueryTrace:
     refined: bool = False
     n_tests: int = 0
     passes: dict[str, float] = field(default_factory=dict)
+    features: dict[int, list[float]] = field(default_factory=dict)  # doc index -> verifier features (V6)
 
 
 class Pipeline:
@@ -95,8 +98,68 @@ class Pipeline:
         return fused
 
     # ---------------- verification ----------------
+    # ---------------- verification with a learned verifier (V6) ----------------
+    def collect_features(self, queries: list[str], S: np.ndarray) -> list[QueryTrace]:
+        """Stage-1 verify top exec_top_k; refine to expand_k where no candidate passes all samples.
+        Every executed candidate gets a feature vector (prism.verifier.candidate_features)."""
+        from .verifier import candidate_features
+
+        cfg = self.cfg
+        width = max(cfg.final_top_k, cfg.exec_top_k, cfg.expand_k)
+        tops = np.argsort(-S, axis=1)[:, :width]
+        traces = [QueryTrace(ranking=[], n_tests=len(parse(q).tests)) for q in queries]
+        tests_of = [parse(q).tests for q in queries]
+
+        def run(pairs: list[tuple[int, int, int]]) -> None:  # (query, doc, rank)
+            res = self.sandbox.details_many([(self.doc_texts[j], tests_of[qi]) for qi, j, _ in pairs],
+                                            cfg.verifier_max_tests)
+            for (qi, j, r), det in zip(pairs, res):
+                top1 = float(S[qi, tops[qi][0]])
+                traces[qi].features[j] = candidate_features(float(S[qi, j]), top1, r, det, len(tests_of[qi]))
+                n = min(len(tests_of[qi]), cfg.verifier_max_tests)
+                ok = sum(1 for st, got, want in det if st == "ok" and outputs_match(got, want))
+                traces[qi].passes[self.doc_ids[j]] = ok / n if n else 0.0
+
+        first = []
+        for qi in range(len(queries)):
+            if tests_of[qi] and self.sandbox is not None and cfg.exec_top_k > 0:
+                traces[qi].executed = True
+                first += [(qi, int(j), r) for r, j in enumerate(tops[qi][: cfg.exec_top_k])]
+        run(first)
+        if cfg.expand_k > cfg.exec_top_k:
+            more = []
+            for qi, tr in enumerate(traces):
+                if tr.executed and not any(v == 1.0 for v in tr.passes.values()):
+                    tr.refined = True
+                    more += [(qi, int(j), cfg.exec_top_k + r) for r, j in enumerate(tops[qi][cfg.exec_top_k: cfg.expand_k])]
+            run(more)
+        self._tops = tops
+        return traces
+
+    def rank_with_verifier(self, traces: list[QueryTrace], S: np.ndarray, verifier) -> list[QueryTrace]:
+        """Executed candidates ordered by verifier logit, placed above non-executed ones (dense order)."""
+        for qi, tr in enumerate(traces):
+            top = self._tops[qi]
+            if tr.features:
+                idx = list(tr.features)
+                lg = verifier.logits(np.array([tr.features[j] for j in idx]))
+                scored = [(self.doc_ids[j], 100.0 + float(v)) for j, v in zip(idx, lg)]
+                seen = set(idx)
+                scored += [(self.doc_ids[j], float(S[qi, j])) for j in top if int(j) not in seen]
+            else:
+                scored = [(self.doc_ids[j], float(S[qi, j])) for j in top]
+            scored.sort(key=lambda x: -x[1])
+            tr.ranking = scored[: self.cfg.final_top_k]
+        return traces
+
     def rerank_with_execution(self, queries: list[str], S: np.ndarray) -> list[QueryTrace]:
         cfg = self.cfg
+        if cfg.verifier:
+            from .verifier import Verifier
+
+            if not hasattr(self, "_verifier"):
+                self._verifier = Verifier.load(cfg.verifier)
+            return self.rank_with_verifier(self.collect_features(queries, S), S, self._verifier)
         traces: list[QueryTrace] = []
         jobs, where = [], []
         tops = np.argsort(-S, axis=1)[:, : max(cfg.final_top_k, cfg.exec_top_k, cfg.expand_k)]
