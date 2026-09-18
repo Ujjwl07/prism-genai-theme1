@@ -1,0 +1,61 @@
+{
+  "n_queries": 568,
+  "n_candidates": 268200,
+  "positives": 542,
+  "rule_w1.0": {
+    "ndcg@10": 82.71,
+    "mrr@10": 80.82,
+    "recall@1": 76.58,
+    "recall@10": 88.56,
+    "recall@100": 94.01
+  },
+  "verifier_C0.01_cv": {
+    "ndcg@10": 84.91,
+    "mrr@10": 83.16,
+    "recall@1": 79.05,
+    "recall@10": 90.32,
+    "recall@100": 94.37
+  },
+  "verifier_C0.1_cv": {
+    "ndcg@10": 84.76,
+    "mrr@10": 82.96,
+    "recall@1": 78.7,
+    "recall@10": 90.32,
+    "recall@100": 94.37
+  },
+  "verifier_C1.0_cv": {
+    "ndcg@10": 84.75,
+    "mrr@10": 82.94,
+    "recall@1": 78.7,
+    "recall@10": 90.32,
+    "recall@100": 94.19
+  },
+  "verifier_C10.0_cv": {
+    "ndcg@10": 84.74,
+    "mrr@10": 82.93,
+    "recall@1": 78.7,
+    "recall@10": 90.32,
+    "recall@100": 94.19
+  },
+  "chosen_C": 0.01,
+  "coef": {
+    "dense": 0.075,
+    "dense_gap_top1": -0.741,
+    "log_rank": -0.908,
+    "n_tests": -0.299,
+    "frac_tests_passed": 0.089,
+    "all_passed": 0.099,
+    "first_passed": 0.079,
+    "crash": 0.86,
+    "timeout": -0.099,
+    "memory": 0.247,
+    "empty_out": 0.537,
+    "n_lines_eq": 0.343,
+    "n_tokens_eq": -0.261,
+    "type_seq_eq": 0.387,
+    "multiset_eq": 0.01,
+    "first_token_eq": 0.256,
+    "numeric_close": 0.064,
+    "token_overlap": 0.282
+  }
+}

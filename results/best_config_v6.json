@@ -1,0 +1,12 @@
+{
+  "encoder": "codexembed-400m",
+  "max_len": 1024,
+  "query_max_len": 1024,
+  "query_views": ["raw"],
+  "exec_top_k": 100,
+  "expand_k": 1500,
+  "final_top_k": 100,
+  "verifier": "results/verifier.json",
+  "verifier_max_tests": 5,
+  "_selected_on": "APPS train split: 5-fold grouped CV, C=0.01 (RESEARCH_LOG V6)"
+}
