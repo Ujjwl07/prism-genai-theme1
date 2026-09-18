@@ -68,10 +68,10 @@ def parse(text: str) -> ParsedQuery:
     pending_sample_in: str | None = None
     for head, body in secs[1:]:
         h = head.lower()
-        if h.startswith("sample input"):
+        if h.startswith(("sample input", "example input", "input example", "sample test input")):
             pending_sample_in = body.strip("\n")
             ex_blocks.append(f"Sample Input\n{body}")
-        elif h.startswith("sample output"):
+        elif h.startswith(("sample output", "example output", "output example", "sample test output")):
             # AtCoder: output then optional free-text explanation after a blank line
             out = body.split("\n\n")[0].strip("\n")
             if pending_sample_in is not None:

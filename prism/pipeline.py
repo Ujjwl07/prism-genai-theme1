@@ -36,6 +36,7 @@ class PipelineConfig:
     exec_weight: float = 1.0       # LEVER-style additive bonus for passing sample tests
     exec_max_tests: int = 3
     gate_margin: float | None = None  # skip execution when top1-top2 dense margin exceeds this (None = always run)
+    expand_k: int = 0              # refine round: if nothing in top exec_top_k passes, verify ranks up to expand_k
     final_top_k: int = 100
 
 
@@ -45,6 +46,7 @@ class QueryTrace:
     ranking: list[tuple[str, float]]
     stage_ms: dict[str, float] = field(default_factory=dict)
     executed: bool = False
+    refined: bool = False
     n_tests: int = 0
     passes: dict[str, float] = field(default_factory=dict)
 
@@ -91,7 +93,7 @@ class Pipeline:
         cfg = self.cfg
         traces: list[QueryTrace] = []
         jobs, where = [], []
-        tops = np.argsort(-S, axis=1)[:, : max(cfg.final_top_k, cfg.exec_top_k)]
+        tops = np.argsort(-S, axis=1)[:, : max(cfg.final_top_k, cfg.exec_top_k, cfg.expand_k)]
         for qi, q in enumerate(queries):
             tests = parse(q).tests
             top = tops[qi]
@@ -112,6 +114,20 @@ class Pipeline:
             if not math.isnan(r):
                 bonus[(qi, j)] = r
                 traces[qi].passes[self.doc_ids[j]] = r
+        # refine round (bounded, one extra pass): widen verification only where no candidate passed
+        if cfg.expand_k > cfg.exec_top_k:
+            jobs, where = [], []
+            for qi, tr in enumerate(traces):
+                if tr.executed and not any(v == 1.0 for v in tr.passes.values()):
+                    tests = parse(queries[qi]).tests
+                    for j in tops[qi][cfg.exec_top_k: cfg.expand_k]:
+                        jobs.append((self.doc_texts[j], tests[: cfg.exec_max_tests]))
+                        where.append((qi, int(j)))
+                    tr.refined = True
+            for (qi, j), r in zip(where, self.sandbox.check_many(jobs) if jobs else []):
+                if not math.isnan(r):
+                    bonus[(qi, j)] = r
+                    traces[qi].passes[self.doc_ids[j]] = r
         for qi, tr in enumerate(traces):
             top = tops[qi]
             scored = [(self.doc_ids[j], float(S[qi, j]) + cfg.exec_weight * bonus.get((qi, int(j)), 0.0))

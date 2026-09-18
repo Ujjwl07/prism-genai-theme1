@@ -216,25 +216,31 @@ class VersionedIndex:
         return chunks
 
     def link_lineages(self, sim: float = 0.85) -> None:
-        """Merge lineages across commits: exact (path, symbol) first; otherwise token-type similarity (Toma-style)."""
+        """Merge lineages across consecutive commits.
+
+        Exact (path, symbol) matches carry over. Remaining new chunks are compared (Toma-style token-type
+        similarity) only against *unmatched* previous chunks of the same file, which keeps it near-linear.
+        """
         commits = list(self.by_commit)
-        known: dict[str, list[str]] = {}
-        for c in commits:
-            for ch in self.by_commit[c]:
-                known.setdefault(ch.lineage, []).append(ch.hash)
         for i in range(1, len(commits)):
             prev = {ch.lineage: ch for ch in self.by_commit[commits[i - 1]]}
-            prev_types = {k: token_types(v.text) for k, v in prev.items()}
             cur_lineages = {ch.lineage for ch in self.by_commit[commits[i]]}
+            orphans_by_file: dict[str, list[tuple[str, list[str]]]] = {}
+            for k, v in prev.items():
+                if k not in cur_lineages:
+                    orphans_by_file.setdefault(v.path, []).append((k, token_types(v.text)))
             for ch in self.by_commit[commits[i]]:
-                if ch.lineage in prev:
+                if ch.lineage in prev or ch.path not in orphans_by_file:
                     continue
                 tt = token_types(ch.text)
                 best, best_s = None, 0.0
-                for k, pt in prev_types.items():
-                    if k in cur_lineages or abs(len(pt) - len(tt)) > 0.3 * max(len(tt), 1):
+                for k, pt in orphans_by_file[ch.path]:
+                    if abs(len(pt) - len(tt)) > 0.3 * max(len(tt), 1):
                         continue
-                    s = difflib.SequenceMatcher(None, pt, tt, autojunk=False).ratio()
+                    sm = difflib.SequenceMatcher(None, pt, tt, autojunk=False)
+                    if sm.quick_ratio() < sim:
+                        continue
+                    s = sm.ratio()
                     if s > best_s:
                         best, best_s = k, s
                 if best is not None and best_s >= sim:
