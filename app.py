@@ -89,7 +89,7 @@ def rebuild(rev: str):
     commits = [x for x in STATE["repo_commits"] if x != c] + [c]
     vi.link_lineages()
     old = len(STATE["repo"].chunks)
-    STATE["repo"] = RepoSearcher(vi, commits, encoder=STATE["repo"].enc.spec.name)
+    STATE["repo"] = RepoSearcher(vi, commits, encoder=STATE["repo"].enc)
     STATE["repo_commits"] = commits
     return (f"Indexed `{c[:8]}`: {vi.stats[c]} · searchable now as the latest version "
             f"({len(STATE['repo'].chunks) - old} new unique chunks embedded, {time.time() - t:.1f} s)")

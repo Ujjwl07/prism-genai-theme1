@@ -60,11 +60,11 @@ def _short(name: str) -> str:
 
 
 class RepoSearcher:
-    def __init__(self, index: VersionedIndex, commits: list[str], encoder: str = "coderankembed"):
+    def __init__(self, index: VersionedIndex, commits: list[str], encoder: "str | Encoder" = "coderankembed"):
         """commits: oldest -> newest (already built in `index`)."""
         self.index = index
         self.commits = commits
-        self.enc = Encoder(encoder)
+        self.enc = encoder if isinstance(encoder, Encoder) else Encoder(encoder)
         # unique chunks across versions (dedup by content hash; remember every commit that contains it)
         self.uniq: dict[str, Chunk] = {}
         self.seen_in: dict[str, list[str]] = {}
