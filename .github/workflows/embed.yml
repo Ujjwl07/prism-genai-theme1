@@ -1,0 +1,43 @@
+name: offline-embed
+# Offline, one-time embedding jobs on x86 CPU runners (same class of hardware as the judges' laptops).
+on:
+  workflow_dispatch:
+    inputs:
+      model: {description: "encoder key (prism/encoders.py SPECS)", required: true, default: "codexembed-400m"}
+      what: {description: "corpus | test | train", required: true, default: "corpus"}
+      variant: {description: "raw | reduced | reduced_noex", required: true, default: "raw"}
+      num_shards: {description: "parallel shards", required: true, default: "8"}
+      max_len: {description: "max tokens", required: true, default: "1024"}
+      limit: {description: "limit queries (0 = all)", required: true, default: "0"}
+      os: {description: "ubuntu-latest | windows-latest", required: true, default: "ubuntu-latest"}
+
+jobs:
+  shards:
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    steps:
+      - uses: actions/checkout@v4
+        if: ${{ matrix.shard < fromJSON(inputs.num_shards) }}
+      - uses: actions/setup-python@v5
+        if: ${{ matrix.shard < fromJSON(inputs.num_shards) }}
+        with: {python-version: "3.12", cache: pip}
+      - name: install
+        if: ${{ matrix.shard < fromJSON(inputs.num_shards) }}
+        run: pip install -r requirements.txt
+      - name: embed
+        if: ${{ matrix.shard < fromJSON(inputs.num_shards) }}
+        shell: bash
+        run: |
+          LIMIT=""; if [ "${{ inputs.limit }}" != "0" ]; then LIMIT="--limit ${{ inputs.limit }}"; fi
+          python scripts/embed.py --model ${{ inputs.model }} --what ${{ inputs.what }} --variant ${{ inputs.variant }} \
+            --shard ${{ matrix.shard }} --num-shards ${{ inputs.num_shards }} --max-len ${{ inputs.max_len }} $LIMIT
+      - uses: actions/upload-artifact@v4
+        if: ${{ matrix.shard < fromJSON(inputs.num_shards) }}
+        with:
+          name: emb-${{ inputs.model }}-${{ inputs.what }}-${{ inputs.variant }}-${{ inputs.max_len }}-${{ matrix.shard }}
+          path: cache/emb/
+          retention-days: 30
