@@ -340,3 +340,34 @@ Same as V3 (TOSEM'23 reformulation review, mGTE EMNLP'24): if reduction protects
 ### Genuine finding
 - Our structure-first reduction does **not** help even at 512 tokens (−0.49 vs raw at 512). Truncating the tail of an APPS statement mostly removes examples and notes, which the encoder evidently doesn't need. The hypothesis from V0 (truncation hurts) is **not supported** for this encoder.
 - **Design decision:** screening uses 1,024 tokens (best accuracy, offline). The interactive demo uses **512 tokens**: 1.76× faster query encoding for −0.5 NDCG@10 at the dense stage, and verification recovers most of that.
+
+---
+
+## V6 — Learned execution verifier (2026-09-19)
+
+### Research basis
+- **LEVER, ICML 2023**: a learned verifier over (NL, program, **execution result**) beats pass/fail filtering when reranking generated programs.
+- **CodeT, ICLR 2023**: execution agreement as a ranking signal. Here that motivates using *all* sample tests when breaking ties between programs that pass.
+- Error analysis from V2 that motivates this: about 10% of gold solutions fail exact sample matching because the problem accepts several valid answers, and 8.6% of queries have a non-gold program that also passes.
+
+### What we changed / adapted
+- The sandbox now also records **(status, stdout)** per run (`run_detail`, cached by code and stdin). Same cost policy as before: stop at the first sample not passed; programs that keep passing are checked on up to **5** samples (was 3).
+- 18 features per (query, candidate) (`prism/verifier.py`):
+  - **Retrieval:** cosine, gap to top-1, log rank.
+  - **Execution:** tests available, fraction passed, all passed, first passed, crash / timeout / memory, empty output.
+  - **Output shape vs. the expected sample output:** same #lines, same #tokens, same token-type sequence, same multiset, same first token, numeric closeness, token overlap.
+- Class-balanced **logistic regression** (CPU, numpy at inference). Candidates that were executed are ranked by the verifier logit. Candidates that weren't keep the dense order.
+- Trained and selected with **5-fold cross-validation grouped by query on the train split** (568 queries with stdin samples, 268,200 candidates, 542 positives).
+
+### Results — train, out-of-fold (568 queries, k=100 → refine 1,500)
+| Ranker on the same candidates | NDCG@10 | MRR@10 | R@1 | R@10 |
+|---|---|---|---|---|
+| V2b rule (cosine + 1.0 × pass) | 82.71 | 80.82 | 76.58 | 88.56 |
+| **Verifier, C=0.01 (chosen)** | **84.91** | **83.16** | **79.05** | **90.32** |
+| Verifier, C=0.1 / 1 / 10 | 84.76 / 84.75 / 84.74 | | | |
+
+Largest standardised weights: log_rank (−0.91), crash (+0.86), dense gap (−0.74), empty_out (+0.54), type_seq_eq (+0.39), n_lines_eq (+0.34), n_tests (−0.30), token_overlap (+0.28), first_token_eq (+0.26).
+
+### Genuine bottlenecks & failures
+1. **"crash" gets a positive weight, and the reason is data, not correctness.** Among train gold solutions on their first sample: 475 run OK and match, 51 run OK but differ (several valid answers), **37 crash without matching**, and 4 crash *after* printing the right answer. The 37 are mostly CodeChef-style samples whose text carries rendering artefacts: LaTeX `$1$` tokens, blank lines between input lines, leading tabs (`ValueError` 22, `IndexError` 10). A correct program then fails on a malformed sample. Because many gold solutions crash for this reason, "crashed" isn't a strong negative signal on train. This artefact is **rare on test** (samples with `$`: 4 of 3,676 queries; blank lines inside the input: 16), so we don't add a normalisation step.
+2. **Feature collection is costly.** 3,626 s for the 568 train queries on the M2 (about 92 executions/s after replacing the per-run watchdog thread with a single-threaded wait loop).
