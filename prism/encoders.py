@@ -54,9 +54,12 @@ class Encoder:
         self.spec = SPECS[spec] if isinstance(spec, str) else spec
         self.device = device or default_device()
         self._model = None
+        self._model_from: "Encoder | None" = None  # share weights with another Encoder (different max_len)
 
     @property
     def model(self):
+        if self._model is None and self._model_from is not None:
+            self._model = self._model_from.model
         if self._model is None:
             import torch
             from sentence_transformers import SentenceTransformer
@@ -86,7 +89,9 @@ class Encoder:
         if missing:
             # sort by length for efficient batching
             order = sorted(missing, key=lambda i: len(texts[i]))
-            vecs = self.model.encode([prefix + texts[i] for i in order], batch_size=batch_size,
+            m = self.model
+            m.max_seq_length = self.spec.max_len  # the model may be shared with an Encoder of another max_len
+            vecs = m.encode([prefix + texts[i] for i in order], batch_size=batch_size,
                                      normalize_embeddings=True, show_progress_bar=show,
                                      convert_to_numpy=True).astype(np.float32)
             store.put([keys[i] for i in order], vecs)

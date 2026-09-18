@@ -28,7 +28,8 @@ VARIANTS = {
 @dataclass
 class PipelineConfig:
     encoder: str = "codexembed-400m"
-    max_len: int = 1024
+    max_len: int = 1024            # document-side max tokens
+    query_max_len: int = 1024      # query-side max tokens (512 halves query-encoding cost on CPU)
     query_views: tuple[str, ...] = ("raw",)
     fusion: str = "sum"            # "sum" of cosine scores or "rrf"
     rrf_k: int = 60
@@ -59,6 +60,11 @@ class Pipeline:
 
         self.cfg = cfg
         self.encoder = encoder or Encoder(replace(SPECS[cfg.encoder], max_len=cfg.max_len))
+        # query encoder shares the loaded model; only the truncation length (and cache key) differs
+        self.q_encoder = self.encoder if cfg.query_max_len == cfg.max_len else \
+            Encoder(replace(SPECS[cfg.encoder], max_len=cfg.query_max_len))
+        if self.q_encoder is not self.encoder:
+            self.q_encoder._model_from = self.encoder
         self.sandbox = sandbox
         self.doc_ids: list[str] = []
         self.doc_texts: list[str] = []
@@ -75,7 +81,7 @@ class Pipeline:
     def dense_scores(self, queries: list[str]) -> np.ndarray:
         views = []
         for v in self.cfg.query_views:
-            Q = self.encoder.encode([VARIANTS[v](q) for q in queries], "query", show=False)
+            Q = self.q_encoder.encode([VARIANTS[v](q) for q in queries], "query", show=False)
             views.append(Q @ self.D.T)
         if len(views) == 1:
             return views[0]

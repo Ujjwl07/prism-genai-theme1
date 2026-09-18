@@ -43,6 +43,7 @@ def main() -> None:
     ap.add_argument("--exec-weight", type=float, default=1.0)
     ap.add_argument("--gate", type=float, default=None)
     ap.add_argument("--expand-k", type=int, default=0)
+    ap.add_argument("--query-max-len", type=int, default=1024)
     ap.add_argument("--tag", default="")
     ap.add_argument("--only-with-tests", action="store_true", help="keep queries with parseable sample tests")
     args = ap.parse_args()
@@ -55,7 +56,7 @@ def main() -> None:
     print(f"{len(queries)} queries", flush=True)
     cfg = PipelineConfig(encoder=args.encoder, query_views=tuple(args.views.split(",")), fusion=args.fusion,
                          exec_top_k=args.exec_top_k, exec_weight=args.exec_weight, gate_margin=args.gate,
-                         expand_k=args.expand_k)
+                         expand_k=args.expand_k, query_max_len=args.query_max_len)
     pipe = Pipeline(cfg, sandbox=Sandbox())
     pipe.index([d["id"] for d in corpus], [d["text"] for d in corpus])
     S = pipe.dense_scores([q["text"] for q in queries])
