@@ -81,6 +81,8 @@ class Encoder:
         store = _Store(CACHE / self.spec.name)
         keys = [self._key(t, prefix) for t in texts]
         missing = [i for i, k in enumerate(keys) if k not in store]
+        if missing and os.environ.get("PRISM_CACHE_ONLY"):
+            raise RuntimeError(f"{len(missing)} texts not in embedding cache for {self.spec.name} (PRISM_CACHE_ONLY set)")
         if missing:
             # sort by length for efficient batching
             order = sorted(missing, key=lambda i: len(texts[i]))

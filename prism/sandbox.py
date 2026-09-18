@@ -31,12 +31,22 @@ _sys.setrecursionlimit(10**6)
 _src = open(_sys.argv[1], encoding="utf-8").read()
 _sys.argv = _sys.argv[:1]
 _g = {"__name__": "__main__", "__builtins__": __builtins__}
-exec(compile(_src, "solution.py", "exec"), _g)
+try:
+    _code = compile(_src, "solution.py", "exec")
+except SyntaxError:
+    # APPS stores stdin programs with top-level `return`/`nonlocal`; its official harness (Hendrycks et al.,
+    # NeurIPS'21 D&B) runs them wrapped in a function. We do the same, only when plain compilation fails.
+    _body = "\n".join("    " + _l for _l in _src.splitlines())
+    _code = compile("def _prism_main():\n" + _body + "\n_prism_main()\n", "solution.py", "exec")
+exec(_code, _g)
 '''
 
 
 def _h(*parts: str) -> str:
     return hashlib.sha1("\x00".join(parts).encode("utf-8", "replace")).hexdigest()
+
+
+_PRELUDE_ID = _h(PRELUDE)[:8]  # cache entries are tied to the exact execution semantics
 
 
 def outputs_match(got: str, want: str, tol: float = 1e-6) -> bool:
@@ -62,7 +72,7 @@ class Sandbox:
     def __init__(self, timeout: float = 4.0, mem_mb: int = 512, workers: int | None = None):
         self.timeout = timeout
         self.mem_mb = mem_mb
-        self.workers = workers or max(1, (os.cpu_count() or 2) - 1)
+        self.workers = workers or int(os.environ.get("PRISM_SANDBOX_WORKERS", max(1, (os.cpu_count() or 2) - 1)))
         self._tmp = Path(tempfile.mkdtemp(prefix="prism_sbx_"))
         (self._tmp / "prelude.py").write_text(PRELUDE, encoding="utf-8")
         self._lock = threading.Lock()
@@ -123,7 +133,7 @@ class Sandbox:
             return float("nan")
         passed = 0
         for inp, want in tests:
-            key = _h(code, inp, want)
+            key = _h(_PRELUDE_ID, code, inp, want)
             ok = self.cache.get(key)
             if ok is None:
                 got = self._run_once(code, inp if inp.endswith("\n") else inp + "\n")

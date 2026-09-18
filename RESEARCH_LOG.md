@@ -144,3 +144,41 @@ Cross-platform rules: PyTorch-CPU / ONNX Runtime / OpenVINO for encoders, llama.
 ### V0 team decisions (2026-09-18)
 - **Execution-based verification: GO.** It is presented transparently as APPS-specific verification, with the prior art in V0.3(f) credited.
 - **Cloud GPU (Colab/Kaggle): allowed for one-time offline jobs only** (optional fine-tuning on the APPS train split, precomputing ReCo rewrites). Anything the judges run stays CPU-only (Windows, Intel).
+
+---
+
+## V1 — Measured facts and first-stage bake-off (2026-09-18)
+
+### Research basis
+- Candidate encoders and their published APPS numbers: see V0.2 (CodeXEmbed COLM'25; CoRNStack ICLR'25).
+- Lexical baseline: BM25 (Robertson & Zaragoza, *Foundations and Trends in IR* 2009) with identifier splitting.
+
+### Setup
+- Data: CoIR `AppsRetrieval` via MTEB 2.21 (revision `f22508f9`). Measured: **8,765 corpus docs** (5,000 are solutions to *train* problems and act as distractors; 3,765 are solutions to test problems), **3,765 test queries**, exactly one relevant doc per query.
+- Lengths (characters): query median **1,601** (p90 2,592), doc median **332** (p90 1,128).
+- Encoders run with sentence-transformers, `max_len=1024`, fp32, **CPU only**, on GitHub-hosted x86 runners (2 vCPU). The same kind of hardware as the judges' Intel laptops.
+- Metrics computed by `prism/metrics.py` (same definitions as MTEB/pytrec_eval for binary relevance).
+
+### Results (APPS test, raw queries, dense only)
+| Method | NDCG@10 | MRR@10 | R@1 | R@10 | R@100 | Paper (NDCG@10) |
+|---|---|---|---|---|---|---|
+| BM25 (code-aware tokens) | 1.50 | 1.26 | 0.90 | 2.26 | 9.38 | – |
+| BM25 on reduced query | 1.49 | 1.26 | 0.88 | 2.26 | 9.93 | – |
+| CodeRankEmbed (137M) | 23.53 | 20.59 | 15.67 | 33.04 | 56.92 | 21.1 |
+| **CodeXEmbed-400M** | **50.78** | **46.16** | **37.53** | **65.52** | **86.37** | 48.57 |
+
+Dense recall of the gold doc for CodeXEmbed-400M: R@20 = 73.04, R@50 = 81.46, R@100 = 86.37.
+
+### Genuine bottlenecks & failures
+1. **Lexical matching fails completely on APPS (NDCG@10 1.5).** Problem statements ("Vasya has n candies…") and solutions (`n=int(input())`) share almost no vocabulary. This matches the V0 modality-gap analysis, and it's why BM25 is excluded from the APPS pipeline. It is kept only for the JS repository, where identifiers do carry meaning.
+2. **CPU throughput on laptop-class hardware.** On a 2-vCPU x86 runner, CodeXEmbed-400M embeds **0.38 corpus docs/s** and **0.16 queries/s** (queries are ~4× longer). CodeRankEmbed manages 1.36 docs/s. On the 8 GB M2, local CPU runs were in the same range. This is dominated by compute (≈2·params·tokens FLOPs per text), not by implementation overhead, and it has two consequences:
+   - CodeXEmbed-2B (75.0 NDCG@10 in its paper) would cost about 6× more per text, which is impractical for query-time use on the judges' CPU laptops. **We keep the 400M model** and try to close the gap with verification (V2), not with model size.
+   - Corpus embeddings are computed **once**, cached by content hash, and shipped as a release asset. Only query-time encoding happens on the judge's machine (~2–6 s/query for the 400M model on a laptop CPU).
+3. **Development-machine memory.** Running the 400M encoder and a full-corpus BM25 side by side on the 8 GB dev laptop exhausted memory. All heavy jobs now run as sharded GitHub Actions jobs (`.github/workflows/embed.yml`, `task.yml`).
+
+### Answers to the V0.5 open questions
+- Q2 (truncation): answered in V3 (query reduction), together with its effect on accuracy.
+- Q3: **97.6%** of test queries (3,674/3,765) contain sample I/O that `prism/query.py` can parse (Codeforces, AtCoder and Russian-language formats).
+- Q4: MTEB 2.21 exposes `SearchProtocol` (`index`/`search`), so the **whole pipeline**, execution verification included, can write the official JSON (`prism/mteb_model.py`).
+
+**Next → V2:** execution-based verification of the dense top-k.
