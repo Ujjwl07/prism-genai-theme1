@@ -395,3 +395,38 @@ The *idea* came from a test-set observation: the V6 verifier's R@1 dropped sligh
 ### Genuine findings
 - The verifier alone slightly *hurt* top-1 on test because it sometimes ranked a well-shaped but *failing* program above a program that passed every sample. Keeping exact verification as a hard filter removes this, and the verifier's gain on "several valid answers" problems (R@10 +1.5) is kept.
 - The rerun costs only **55 s** because every execution is cached (`cache/exec_detail.jsonl`).
+
+---
+
+## V7 — General (non-APPS-specific) accuracy and speed levers (2026-09-19)
+
+### Research basis and what we ruled out before building
+- **ReCo (ACL 2024)** / **HyDE (ACL 2023)**: large gains for *weak* retrievers on APPS. ReCo reports zero-shot UniXcoder 8.3 → 28.8 MRR and Contriever 9.6 → 41.6. Both need a **7B+ LLM (Code Llama 7–34B, GPT-3.5) at query time**, and the paper notes that larger LLMs help more. At laptop-CPU speed that's minutes per query. **Not built.**
+- **Matryoshka Representation Learning (NeurIPS 2022)**: truncating dimensions requires an MRL-trained encoder (CodeXEmbed isn't one), and search over ~9k vectors already takes milliseconds. **Not built.**
+
+### V7a — Vector pseudo-relevance feedback (Rocchio) — *negative result*
+- Basis: **Li et al., TOIS 2023**. Vector PRF (q' = α·q + (1−α)·mean(top-k doc vectors)) improves dense retrievers when the feedback is of good quality. It needs no extra encoding and applies to any query.
+- Train (1,200 queries, dense only): baseline **48.25** NDCG@10. Best PRF setting, k=2 with α=0.8, gives **46.95**. **Every** setting (k ∈ {1,2,3,5}, α ∈ {0.4,0.6,0.8}) was worse.
+- **Genuine finding:** APPS has exactly one relevant document per query and first-stage precision@1 is only ~35%, so the feedback vectors are mostly *wrong* programs and pull the query away from the answer. This is the "feedback quality" failure mode the TOIS paper warns about. **Not adopted.**
+
+### V7b — int8 dynamic quantization of the query encoder (speed)
+- Basis: **I-BERT (ICML 2021)**: integer inference gives ~3× CPU speed-up at parity accuracy. **Bondarenko, Nagel & Blankevoort (EMNLP 2021)**: naive 8-bit post-training quantization of transformers fails because of structured activation outliers in the FFN/residual path.
+- **Failure, reproduced exactly as the EMNLP'21 paper predicts:** quantizing *all* Linear layers gave a cosine of only **0.68** to the fp32 query vectors (min 0.61).
+- **Fix from that paper's analysis:** keep the FFN **down-projections** (the outlier-carrying layers) in fp32 and quantize the rest. Cosine to fp32: **0.988** (min 0.986). Keeping only up/gate quantized reaches 0.995 but is slower.
+- **Accuracy** (300 train queries, int8 queries vs fp32 document vectors): **52.15** vs fp32 50.55 NDCG@10, i.e. no measurable loss (the +1.6 is within noise for 300 queries).
+- **Speed:** on Linux x86 (GitHub runner, 512 tokens) **0.223 → 0.314 q/s (1.41×)**. On the ARM M2, int8 was *slower* than fp32 (qnnpack kernels). The target hardware for int8 is x86, i.e. the judges' Intel laptops. The full x86 benchmark (1,024 tokens, 4-core CPU) is being re-run on Kaggle.
+
+### V7d — Early-exit ("anytime") verification (interactive latency)
+- Basis: Repoformer (ICML 2024) / Adaptive-RAG (NAACL 2024) selective compute, applied *inside* verification. Verify in batches in dense order and stop after the batch that contains the first program passing all samples.
+- Simulated on the saved train features (568 queries, V6b ranker):
+
+| Batch size | NDCG@10 | R@1 | R@10 | executed candidates / query |
+|---|---|---|---|---|
+| no early exit | 85.16 | 79.58 | 90.32 | 472.2 |
+| 10 | 83.42 | 79.40 | 86.80 | 261.4 |
+| 20 | 83.70 | 79.40 | 87.32 | 267.9 |
+
+- **Finding:** top-1 is almost unchanged (−0.2) with **45% fewer executions**, but NDCG@10 drops 1.5 because early exit skips the verifier's demotion of failing programs out of the top-10. **Used only for the interactive demo, not for the screening run.**
+
+### Interactive profile (demo), measured on the M2
+int8 512-token queries + learned verifier + early exit (batch 10, refine budget 300): **0.7–1.4 s end-to-end** for a new problem statement. The verify times in that measurement were partly served from the execution cache. The screening configuration (V6b) is unchanged.

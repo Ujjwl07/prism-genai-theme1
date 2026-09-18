@@ -1,0 +1,34 @@
+{
+ "no_early_exit": {
+  "ndcg@10": 85.16,
+  "mrr@10": 83.48,
+  "recall@1": 79.58,
+  "recall@10": 90.32,
+  "recall@100": 94.37,
+  "avg_candidates_executed": 472.2
+ },
+ "batch5": {
+  "ndcg@10": 83.1,
+  "mrr@10": 82.01,
+  "recall@1": 79.4,
+  "recall@10": 86.44,
+  "recall@100": 93.84,
+  "avg_candidates_executed": 258.4
+ },
+ "batch10": {
+  "ndcg@10": 83.42,
+  "mrr@10": 82.3,
+  "recall@1": 79.4,
+  "recall@10": 86.8,
+  "recall@100": 93.84,
+  "avg_candidates_executed": 261.4
+ },
+ "batch20": {
+  "ndcg@10": 83.7,
+  "mrr@10": 82.5,
+  "recall@1": 79.4,
+  "recall@10": 87.32,
+  "recall@100": 93.84,
+  "avg_candidates_executed": 267.9
+ }
+}

@@ -26,7 +26,9 @@ def build_apps() -> None:
     ensure_data()
     corpus = load_corpus()
     # interactive latency budget (RESEARCH_LOG V2b): verify top-20, refine to 100 only if nothing passes
-    pipe = Pipeline(PipelineConfig(exec_top_k=20, expand_k=100, query_max_len=512), sandbox=Sandbox())  # V3b: 1.76x faster
+    # interactive profile (RESEARCH_LOG V3b/V6b/V7): int8 512-token queries, learned verifier, early-exit verification
+    pipe = Pipeline(PipelineConfig(exec_top_k=100, expand_k=300, query_max_len=512, query_encoder="codexembed-400m-int8",
+                                   verifier="results/verifier.json", early_exit_batch=10), sandbox=Sandbox())
     t = time.time()
     pipe.index([d["id"] for d in corpus], [d["text"] for d in corpus])
     STATE["apps"] = pipe
@@ -36,9 +38,13 @@ def build_apps() -> None:
 
 def apps_search(problem: str, use_exec: bool, k: int):
     pipe: Pipeline = STATE["apps"]
-    pipe.cfg.exec_weight = 1.0 if use_exec else 0.0
+    k_exec = pipe.cfg.exec_top_k
+    pipe.cfg.exec_top_k = k_exec if use_exec else 0
     t = time.time()
-    tr = pipe.search([problem])[0]
+    try:
+        tr = pipe.search([problem])[0]
+    finally:
+        pipe.cfg.exec_top_k = k_exec
     total = 1000 * (time.time() - t)
     rows = []
     for rank, (did, score) in enumerate(tr.ranking[:k], 1):

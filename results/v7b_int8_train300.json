@@ -1,0 +1,16 @@
+{
+ "codexembed-400m": {
+  "ndcg@10": 50.55,
+  "mrr@10": 46.1,
+  "recall@1": 37.67,
+  "recall@10": 64.67,
+  "recall@100": 88.67
+ },
+ "codexembed-400m-int8": {
+  "ndcg@10": 52.15,
+  "mrr@10": 47.51,
+  "recall@1": 39.33,
+  "recall@10": 67.0,
+  "recall@100": 88.33
+ }
+}

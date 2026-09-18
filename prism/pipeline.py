@@ -41,6 +41,8 @@ class PipelineConfig:
     final_top_k: int = 100
     verifier: str | None = None    # path to a trained LEVER-style verifier (V6); None = pass/fail bonus rule
     verifier_max_tests: int = 5
+    query_encoder: str | None = None  # V7b: e.g. "codexembed-400m-int8" (same weights, int8 query side)
+    early_exit_batch: int = 0         # V7d: verify in batches of this size, stop after the first full pass (0 = off)
 
 
 @dataclass
@@ -64,10 +66,13 @@ class Pipeline:
         self.cfg = cfg
         self.encoder = encoder or Encoder(replace(SPECS[cfg.encoder], max_len=cfg.max_len))
         # query encoder shares the loaded model; only the truncation length (and cache key) differs
-        self.q_encoder = self.encoder if cfg.query_max_len == cfg.max_len else \
-            Encoder(replace(SPECS[cfg.encoder], max_len=cfg.query_max_len))
-        if self.q_encoder is not self.encoder:
-            self.q_encoder._model_from = self.encoder
+        if cfg.query_encoder:  # separate (e.g. int8) model for queries; documents keep fp32 cached vectors
+            self.q_encoder = Encoder(replace(SPECS[cfg.query_encoder], max_len=cfg.query_max_len))
+        else:
+            self.q_encoder = self.encoder if cfg.query_max_len == cfg.max_len else \
+                Encoder(replace(SPECS[cfg.encoder], max_len=cfg.query_max_len))
+            if self.q_encoder is not self.encoder:
+                self.q_encoder._model_from = self.encoder
         self.sandbox = sandbox
         self.doc_ids: list[str] = []
         self.doc_texts: list[str] = []
@@ -120,6 +125,19 @@ class Pipeline:
                 ok = sum(1 for st, got, want in det if st == "ok" and outputs_match(got, want))
                 traces[qi].passes[self.doc_ids[j]] = ok / n if n else 0.0
 
+        if cfg.early_exit_batch > 0:  # V7d anytime verification (interactive latency)
+            b, limit = cfg.early_exit_batch, max(cfg.exec_top_k, cfg.expand_k)
+            for qi in range(len(queries)):
+                if not (tests_of[qi] and self.sandbox is not None and cfg.exec_top_k > 0):
+                    continue
+                traces[qi].executed = True
+                for start in range(0, limit, b):
+                    run([(qi, int(j), start + r) for r, j in enumerate(tops[qi][start: start + b])])
+                    if any(v == 1.0 for v in traces[qi].passes.values()):
+                        break
+                    traces[qi].refined = start + b >= cfg.exec_top_k
+            self._tops = tops
+            return traces
         first = []
         for qi in range(len(queries)):
             if tests_of[qi] and self.sandbox is not None and cfg.exec_top_k > 0:
