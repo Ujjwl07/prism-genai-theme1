@@ -24,6 +24,7 @@ class EncoderSpec:
     doc_prefix: str = ""
     max_len: int = 1024
     dtype: str = "float32"
+    quant: str | None = None   # "int8": dynamic int8 quantization of Linear layers (CPU; I-BERT ICML'21 motivation)
 
 
 # Prefixes follow each model card / paper.
@@ -39,6 +40,10 @@ SPECS: dict[str, EncoderSpec] = {
                                  dtype="bfloat16"),
     # CodeSage (ICLR 2024)
     "codesage-large-v2": EncoderSpec("codesage-large-v2", "codesage/codesage-large-v2"),
+    # V7b: same CodeXEmbed-400M weights, int8 dynamic quantization for CPU speed
+    "codexembed-400m-int8": EncoderSpec("codexembed-400m-int8", "Salesforce/SFR-Embedding-Code-400M_R",
+                                        query_prefix="Instruct: Given Code or Text, retrieval relevant content\nQuery: ",
+                                        quant="int8"),
 }
 
 
@@ -68,6 +73,15 @@ class Encoder:
             self._model = SentenceTransformer(self.spec.hf_id, device=self.device, trust_remote_code=True,
                                               model_kwargs=kw)
             self._model.max_seq_length = self.spec.max_len
+            if self.spec.quant == "int8":
+                import torch
+
+                torch.backends.quantized.engine = "qnnpack" if "arm" in __import__("platform").machine().lower() \
+                    else "fbgemm"
+                # keep FFN down-projections in fp32: activation outliers there break int8 (Bondarenko et al., EMNLP'21)
+                targets = {n for n, mod in self._model.named_modules()
+                           if isinstance(mod, torch.nn.Linear) and "down_proj" not in n}
+                self._model = torch.ao.quantization.quantize_dynamic(self._model, targets, dtype=torch.qint8)
         return self._model
 
     def tokenizer_lengths(self, texts: list[str]) -> np.ndarray:
@@ -75,7 +89,8 @@ class Encoder:
         return np.array([len(tok(t, add_special_tokens=True)["input_ids"]) for t in texts])
 
     def _key(self, text: str, prefix: str) -> str:
-        h = hashlib.sha1(f"{self.spec.hf_id}|{self.spec.max_len}|{prefix}|{text}".encode()).hexdigest()
+        q = f"|{self.spec.quant}" if self.spec.quant else ""  # fp32 keys unchanged (existing caches stay valid)
+        h = hashlib.sha1(f"{self.spec.hf_id}|{self.spec.max_len}{q}|{prefix}|{text}".encode()).hexdigest()
         return h
 
     def encode(self, texts: list[str], kind: str = "doc", batch_size: int = 16, show: bool = True) -> np.ndarray:
