@@ -1,1 +1,3 @@
 dense_only {'ndcg@10': 50.78, 'mrr@10': 46.16, 'recall@1': 37.53, 'recall@10': 65.52, 'recall@100': 86.37, 'verify_s_per_query': 0.0005, 'executed_frac': 0.0}
+exec_k100_w1.0 {'ndcg@10': 80.77, 'mrr@10': 79.7, 'recall@1': 77.03, 'recall@10': 84.04, 'recall@100': 86.37, 'verify_s_per_query': 1.8393, 'executed_frac': 0.976}
+-> results/exp_test_codexembed-400m_raw_k100fill.json

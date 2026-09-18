@@ -182,3 +182,69 @@ Dense recall of the gold doc for CodeXEmbed-400M: R@20 = 73.04, R@50 = 81.46, R@
 - Q4: MTEB 2.21 exposes `SearchProtocol` (`index`/`search`), so the **whole pipeline**, execution verification included, can write the official JSON (`prism/mteb_model.py`).
 
 **Next → V2:** execution-based verification of the dense top-k.
+
+---
+
+## V2 — Execution-based verification of retrieved code (2026-09-18)
+
+### Research basis
+- **Reiss, "Semantics-Based Code Search", ICSE 2009**: filters keyword-search results by running user-supplied tests.
+- **Stolee, Elbaum & Dobos, "Solving the Search for Source Code", ACM TOSEM 2014**: code search driven by input/output examples.
+- **CodeT, ICLR 2023** and **LEVER, ICML 2023**: rerank *generated* programs using execution results. LEVER combines the model's score with an execution-based verifier.
+- **APPS, Hendrycks et al., NeurIPS 2021 Datasets & Benchmarks**: the benchmark's official harness runs stdin programs wrapped in a function.
+- What these papers already established, so we don't redo it: running code is a much stronger correctness signal than lexical or semantic similarity. We don't train a LEVER-style verifier because the pass/fail signal on the sample tests is already very sharp (see failures below). A learned verifier would add compute without a clear gain.
+
+### What we changed / adapted
+- **Test source.** No user-written specs (unlike Reiss and Stolee) and no LLM-generated tests (unlike CodeT). We **extract the sample I/O already written in the natural-language query** (`prism/query.py`), covering Codeforces, AtCoder, CodeChef and Russian formats. Coverage: **97.6%** of test queries.
+- **Candidates.** We verify **retrieved** programs (the dense top-k), not generated ones.
+- **Scoring.** LEVER-style additive fusion, `score = cosine(q, d) + w · pass_fraction(d)`, with fail-fast over up to 3 sample tests.
+- **Sandbox.** One `python -I` subprocess per run, with a wall-clock timeout (4 s), a psutil RSS watchdog (512 MB) and sockets stubbed out. Results are cached by (execution-semantics hash, code, test). The same code runs on Windows and Linux (CI).
+
+### Setup
+- Encoder: CodeXEmbed-400M (V1), raw queries.
+- **Tuning on the train split only**: the first 1,200 train queries, restricted to the **568** with parseable stdin tests. Many early train problems are LeetCode *function-style* tasks with no stdin I/O, while the test split is 97.6% stdin-style, so this restriction makes the tuning set match the test distribution.
+
+### Results — train tuning grid (568 queries, NDCG@10)
+| top-k verified | w=0.02 | w=0.05 | w=0.1 | w=0.2 | w=1.0 |
+|---|---|---|---|---|---|
+| dense only | 42.26 | | | | |
+| 10 | 49.26 | 52.13 | 52.54 | 52.54 | 52.54 |
+| 20 | 52.07 | 56.88 | 57.89 | 57.89 | 57.89 |
+| 50 | 53.92 | 63.40 | 65.87 | 65.89 | 65.89 |
+| 100 | 54.03 | 66.28 | 71.32 | 71.53 | **71.53** |
+
+- The weight plateaus at w ≥ 0.2, i.e. a program that passes should outrank any program that doesn't. **Chosen: w = 1.0**, the robust end of the plateau.
+- Accuracy increases with k all the way to 100, so the limit is how many candidates get verified, not how the scores are fused → motivates V2b.
+
+### Genuine bottlenecks & failures
+1. **Correct solutions failing their own sample tests.** In a 150-query sample, 13 of 150 gold solutions (8.7%) "crashed". The cause is data format, not a sandbox bug: APPS stores stdin solutions with **top-level `return` / `nonlocal`**, which only compile inside the function wrapper the official APPS harness uses. **Fix:** when plain compilation fails, the sandbox wraps the program the way the APPS harness does. The gold pass rate on the same sample went from **86.7% to 90.0%**. The remaining ~10% are **problems that accept several correct answers** (e.g. "print any valid permutation"), which can't be verified without the problem's own checker. This is an **inherent limit** of sample-based verification.
+2. **False positives.** In **8.6%** of test queries at least one *non-gold* program in the top-20 also passes all sample tests (near-duplicate problems among the 5,000 train-problem distractors, or weak samples). Among programs that pass, the dense score decides the order.
+3. **Verification depth vs. recall.** With k = 20, 27% of gold solutions are never verified (dense R@20 = 73.0%); R@100 = 86.4%.
+4. **Function-style (LeetCode/Codewars) problems can't be executed.** They have no stdin/stdout I/O, and the function name isn't in the CoIR text. These queries fall back to dense ranking. This affects **2.4%** of test queries but a large share of the early train split.
+
+---
+
+## V2b — Confidence-gated refinement round (2026-09-18)
+
+### Research basis
+- **Repoformer, ICML 2024** and **Adaptive-RAG, NAACL 2024**: spend extra retrieval effort only when it's needed.
+- **Agentless, FSE 2025**: a fixed, bounded pipeline beats open-ended agent loops.
+
+### What we changed / adapted
+- One bounded extra round: **if none of the top-k verified candidates passes all sample tests**, keep verifying down the dense ranking to rank `expand_k`. Queries that already have a passing candidate stop, and that's most of them.
+
+### Results — train (568 queries, w = 1.0)
+| Configuration | NDCG@10 | MRR@10 | R@1 | R@10 | queries refined | verify s/query (M2, 3–4 workers, cold cache) |
+|---|---|---|---|---|---|---|
+| k=100 (no refine) | 71.53 | 69.83 | 65.85 | 76.76 | 0% | ~1.6 |
+| k=20 → 100 | 70.45 | 69.09 | 65.85 | 74.65 | 43% | ~0.8 |
+| k=100 → 300 | 77.66 | 75.83 | 71.48 | 83.27 | 26.6% | 1.7 |
+| k=100 → 500 | 80.41 | 78.57 | 74.30 | 86.09 | 26.6% | 1.6 |
+| **k=100 → 1500** | **82.71** | **80.82** | **76.58** | **88.56** | 26.6% | 5.8 |
+| k=100 → 3000 | 83.41 | 81.52 | 77.29 | 89.26 | 26.6% | 7.3 |
+
+- **k=20→100 matches plain k=100 (−1.1) with about half the executions.** That's the latency setting for the interactive demo.
+- The returns shrink beyond 1,500 (+0.7 for 2× the refine cost). **Chosen for the screening run: k=100, expand_k=1500, w=1.0**, selected on train only.
+
+### Genuine bottlenecks & failures
+- **Refinement cost is concentrated on the hardest ~27% of queries.** These are the queries whose gold solution can't be verified (special-judge problems) or isn't retrievable at all. For them the refine round checks up to 1,400 extra programs before giving up, which costs about 20 s on a laptop CPU. That's fine offline (the screening JSON), but for interactive use the `expand_k` budget has to be capped. This is the latency/accuracy trade-off we report.

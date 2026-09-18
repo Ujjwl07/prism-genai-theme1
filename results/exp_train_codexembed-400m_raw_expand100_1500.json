@@ -1,0 +1,22 @@
+{
+  "dense_only": {
+    "ndcg@10": 42.26,
+    "mrr@10": 38.07,
+    "recall@1": 30.28,
+    "recall@10": 55.63,
+    "recall@100": 82.22,
+    "verify_s_per_query": 0.0014,
+    "executed_frac": 0.0,
+    "refined_frac": 0.0
+  },
+  "exec_k100_w1.0_expand1500": {
+    "ndcg@10": 82.71,
+    "mrr@10": 80.82,
+    "recall@1": 76.58,
+    "recall@10": 88.56,
+    "recall@100": 94.01,
+    "verify_s_per_query": 5.7802,
+    "executed_frac": 1.0,
+    "refined_frac": 0.266
+  }
+}
