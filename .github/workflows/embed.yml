@@ -12,31 +12,34 @@ on:
       os: {description: "ubuntu-latest | windows-latest", required: true, default: "ubuntu-latest"}
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      shards: ${{ steps.m.outputs.shards }}
+    steps:
+      - id: m
+        run: echo "shards=$(python3 -c 'import json;print(json.dumps(list(range(${{ inputs.num_shards }}))))')" >> "$GITHUB_OUTPUT"
   shards:
+    needs: plan
     runs-on: ${{ inputs.os }}
     timeout-minutes: 350
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
     steps:
       - uses: actions/checkout@v4
-        if: ${{ matrix.shard < fromJSON(inputs.num_shards) }}
       - uses: actions/setup-python@v5
-        if: ${{ matrix.shard < fromJSON(inputs.num_shards) }}
         with: {python-version: "3.12", cache: pip}
       - name: install
-        if: ${{ matrix.shard < fromJSON(inputs.num_shards) }}
         run: pip install -r requirements.txt
       - name: embed
-        if: ${{ matrix.shard < fromJSON(inputs.num_shards) }}
         shell: bash
         run: |
           LIMIT=""; if [ "${{ inputs.limit }}" != "0" ]; then LIMIT="--limit ${{ inputs.limit }}"; fi
           python scripts/embed.py --model ${{ inputs.model }} --what ${{ inputs.what }} --variant ${{ inputs.variant }} \
             --shard ${{ matrix.shard }} --num-shards ${{ inputs.num_shards }} --max-len ${{ inputs.max_len }} $LIMIT
       - uses: actions/upload-artifact@v4
-        if: ${{ matrix.shard < fromJSON(inputs.num_shards) }}
         with:
           name: emb-${{ inputs.model }}-${{ inputs.what }}-${{ inputs.variant }}-${{ inputs.max_len }}-${{ matrix.shard }}
           path: cache/emb/
