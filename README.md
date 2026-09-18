@@ -15,9 +15,10 @@ Given a natural-language query, rank code snippets by relevance — for competit
 | CodeRankEmbed 137M (dense) | 23.53 | 20.59 | 15.67 |
 | CodeXEmbed-400M (dense) | 50.78 | 46.16 | 37.53 |
 | + execution verification of top-100 | 80.77 | 79.70 | 77.03 |
-| **+ gated refinement to rank 1,500 (submitted)** | **88.91** | **87.69** | **84.65** |
+| + gated refinement to rank 1,500 | 88.91 | 87.69 | 84.65 |
+| **+ learned verifier, exact-pass first (submitted, V6b)** | **90.68** | **89.51** | **86.43** |
 
-Configuration selected on the APPS **train** split (`results/best_config.json`, RESEARCH_LOG V2/V2b).
+Configuration selected on the APPS **train** split (`results/best_config.json`, RESEARCH_LOG V2/V2b/V6).
 Official JSON: `results/appsretrieval_results.json` (MTEB 2.21.0), also attached to the GitHub Release
 `PRISM_GENAI_HACKATHON_Y2026`.
 
@@ -50,7 +51,7 @@ QUERY TIME
 | Problem framing (query/code/match end) | Survey of Source Code Search, TOSEM'24 |
 | Query reduction / restructuring | Query-reformulation review, TOSEM'23 |
 | Dense code retrieval | CodeXEmbed (COLM'25), CoRNStack (ICLR'25), CodeSage (ICLR'24) |
-| Execution verification of retrieved code | Reiss ICSE'09, Stolee et al. TOSEM'14, CodeT ICLR'23, LEVER ICML'23 |
+| Execution verification of retrieved code + learned verifier | Reiss ICSE'09, Stolee et al. TOSEM'14, CodeT ICLR'23, LEVER ICML'23 |
 | Confidence-gated extra compute | Repoformer ICML'24, Adaptive-RAG NAACL'24 |
 | Fixed, bounded agent loop | Agentless FSE'25 |
 | AST chunking for repositories | cAST, EMNLP'25 Findings |

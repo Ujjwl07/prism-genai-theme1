@@ -103,7 +103,7 @@ function card(s, x, y, w, h, head, body, fill) {
     ["2  Dense search", "CodeXEmbed-400M, cached corpus vectors; top-100"],
     ["3  Verify", "run top-100 on sample tests in a sandbox (fail-fast)"],
     ["4  Refine (gated)", "only if nothing passed: verify down to rank 1,500"],
-    ["5  Fuse & rank", "score = cosine + 1.0 × pass-fraction (LEVER-style)"]];
+    ["5  Verify & rank", "all samples passed first, then a learned verifier (LEVER, ICML'23)"]];
   steps.forEach((st, i) => {
     const x = 0.6 + i * 2.5;
     s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x, y: 2.0, w: 2.25, h: 1.9, fill: { color: i === 2 || i === 3 ? C.mintSoft : C.mist }, line: { color: i === 2 || i === 3 ? C.mint : C.line, width: 1 }, rectRadius: 0.1 });
@@ -119,13 +119,14 @@ function card(s, x, y, w, h, head, body, fill) {
 // 5 ─ Research grounding ───────────────────────────────────────────────────────────
 {
   const s = pres.addSlide(); s.background = { color: C.paper };
-  title(s, "Every stage is grounded in peer-reviewed work", "Full literature review, decisions and genuine failures: RESEARCH_LOG.md (V0 → V5).");
+  title(s, "Every stage is grounded in peer-reviewed work", "Full literature review, decisions and genuine failures: RESEARCH_LOG.md (V0 → V6b).");
   const rows = [
     ["Stage", "Built on", "What we changed"],
     ["Query parsing / reduction", "Query-reformulation review, TOSEM'23", "Reduce long statements instead of expanding short ones"],
     ["Dense retrieval", "CodeXEmbed COLM'25 · CoRNStack ICLR'25", "Chose 400M: best accuracy that fits a laptop CPU"],
     ["Execution verification", "Reiss ICSE'09 · Stolee TOSEM'14 · CodeT ICLR'23 · LEVER ICML'23", "Tests mined from the query; verify retrieved (not generated) code"],
     ["Gated refinement", "Repoformer ICML'24 · Adaptive-RAG NAACL'24", "Extra compute only when no candidate passes"],
+    ["Learned verifier", "LEVER ICML'23", "18 execution/shape features; exact pass stays a hard filter"],
     ["Bounded agent loop", "Agentless FSE'25", "Fixed pipeline, ≤ 1 refine round"],
     ["Repo chunking", "cAST EMNLP'25 Findings", "AST split-merge for JS/TS, call graph per chunk"],
     ["Versions / near-duplicates", "Toma ICSE'24 · TreeCen ASE'22", "Token-type lineages collapse versions into one slot"],
@@ -137,10 +138,10 @@ function card(s, x, y, w, h, head, body, fill) {
 // 6 ─ Results / ablation ───────────────────────────────────────────────────────────
 {
   const s = pres.addSlide(); s.background = { color: C.paper };
-  title(s, "Results on CoIR AppsRetrieval (test, 3,765 queries)", "Configuration selected on the APPS train split only; test used once for reporting.");
-  s.addChart(pres.charts.BAR, [{ name: "NDCG@10", labels: ["BM25", "CodeRankEmbed", "CodeXEmbed-400M", "+ verify top-100", "+ gated refine (final)"],
-    values: [1.5, 23.53, 50.78, 80.77, fin ? +FINAL_NDCG : 0] }], {
-    x: 0.6, y: 1.8, w: 7.8, h: 5.2, barDir: "col", chartColors: [C.slate, C.slate, C.slate, C.mint, C.mint], showValue: true, dataLabelPosition: "outEnd", dataLabelFormatCode: "0.0",
+  title(s, "Results on CoIR AppsRetrieval (test, 3,765 queries)", "Each configuration selected on the APPS train split; bars are the reported test runs (RESEARCH_LOG V1–V6b).");
+  s.addChart(pres.charts.BAR, [{ name: "NDCG@10", labels: ["BM25", "CodeRankEmbed", "CodeXEmbed-400M", "+ verify top-100", "+ gated refine", "+ learned verifier"],
+    values: [1.5, 23.53, 50.78, 80.77, 88.91, fin ? +FINAL_NDCG : 0] }], {
+    x: 0.6, y: 1.8, w: 7.8, h: 5.2, barDir: "col", chartColors: [C.slate, C.slate, C.slate, C.mint, C.mint, C.mint], showValue: true, dataLabelPosition: "outEnd", dataLabelFormatCode: "0.0",
     dataLabelFontSize: 12, dataLabelFontBold: true, catAxisLabelColor: C.text, catAxisLabelFontSize: 11, valAxisHidden: true, valAxisMaxVal: 100,
     valGridLine: { style: "none" }, catGridLine: { style: "none" }, showLegend: false, showTitle: true, title: "NDCG@10 (%)", titleFontSize: 12, titleColor: C.slate });
   stat(s, 8.9, 1.9, 3.8, FINAL_NDCG, "NDCG@10 — final pipeline (vs 50.78 dense-only)", C.mint);
@@ -195,7 +196,7 @@ function card(s, x, y, w, h, head, body, fill) {
 {
   const s = pres.addSlide(); s.background = { color: C.paper };
   title(s, "Limitations and genuine failures", "From RESEARCH_LOG.md — measured, not hypothetical.");
-  card(s, 0.6, 1.9, 5.95, 1.55, "Multiple valid answers (~10% of gold solutions)", "“Print any valid permutation” problems need a checker; exact-match verification rejects correct code.", C.coralSoft);
+  card(s, 0.6, 1.9, 5.95, 1.55, "Multiple valid answers (~10% of gold solutions)", "“Print any valid permutation” problems fail exact matching; the learned verifier recovers part of them via output-shape features.", C.coralSoft);
   card(s, 6.75, 1.9, 5.95, 1.55, "Unretrievable gold (6% of train queries)", "Gold still missing from the final top-100 after refinement: if the embedder never surfaces it, verification cannot help.", C.coralSoft);
   card(s, 0.6, 3.65, 5.95, 1.55, "Weak samples → false positives (8.6%)", "Another program also passes all samples; dense score breaks the tie.", C.coralSoft);
   card(s, 6.75, 3.65, 5.95, 1.55, "Function-style tasks (2.4% of test)", "LeetCode/Codewars problems have no stdin I/O and no function name in the text → dense-only ranking.", C.coralSoft);

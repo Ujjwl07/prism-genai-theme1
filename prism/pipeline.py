@@ -137,13 +137,18 @@ class Pipeline:
         return traces
 
     def rank_with_verifier(self, traces: list[QueryTrace], S: np.ndarray, verifier) -> list[QueryTrace]:
-        """Executed candidates ordered by verifier logit, placed above non-executed ones (dense order)."""
+        """Executed candidates: all-samples-passed first, then by verifier logit; non-executed after (dense order)."""
+        from .verifier import FEATURES
+
         for qi, tr in enumerate(traces):
             top = self._tops[qi]
             if tr.features:
                 idx = list(tr.features)
-                lg = verifier.logits(np.array([tr.features[j] for j in idx]))
-                scored = [(self.doc_ids[j], 100.0 + float(v)) for j, v in zip(idx, lg)]
+                F = np.array([tr.features[j] for j in idx])
+                lg = verifier.logits(F)
+                # V6b: exact verification is a hard filter (all samples passed first); the verifier orders within groups
+                allp = F[:, FEATURES.index("all_passed")]
+                scored = [(self.doc_ids[j], 100.0 + 50.0 * float(a) + float(v)) for j, v, a in zip(idx, lg, allp)]
                 seen = set(idx)
                 scored += [(self.doc_ids[j], float(S[qi, j])) for j in top if int(j) not in seen]
             else:

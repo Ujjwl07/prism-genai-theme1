@@ -371,3 +371,27 @@ Largest standardised weights: log_rank (−0.91), crash (+0.86), dense gap (−0
 ### Genuine bottlenecks & failures
 1. **"crash" gets a positive weight, and the reason is data, not correctness.** Among train gold solutions on their first sample: 475 run OK and match, 51 run OK but differ (several valid answers), **37 crash without matching**, and 4 crash *after* printing the right answer. The 37 are mostly CodeChef-style samples whose text carries rendering artefacts: LaTeX `$1$` tokens, blank lines between input lines, leading tabs (`ValueError` 22, `IndexError` 10). A correct program then fails on a malformed sample. Because many gold solutions crash for this reason, "crashed" isn't a strong negative signal on train. This artefact is **rare on test** (samples with `$`: 4 of 3,676 queries; blank lines inside the input: 16), so we don't add a normalisation step.
 2. **Feature collection is costly.** 3,626 s for the 568 train queries on the M2 (about 92 executions/s after replacing the per-run watchdog thread with a single-threaded wait loop).
+
+### V6 results — CoIR AppsRetrieval **test** (3,765 queries, official MTEB 2.21.0 JSON)
+| Configuration | NDCG@10 | MRR@10 | R@1 | R@10 | R@100 |
+|---|---|---|---|---|---|
+| V5 rule (submitted before) | 88.91 | 87.69 | 84.65 | 92.64 | 95.11 |
+| V6 verifier only | 89.66 | 88.18 | 84.30 | 94.13 | 95.67 |
+| **V6b all-samples-passed first, then verifier (new submission)** | **90.68** | **89.51** | **86.43** | **94.18** | **95.67** |
+
+---
+
+## V6b — Hard filter + learned verifier (2026-09-19)
+
+### Research basis
+- LEVER (ICML'23) combines verifier probability with the model's score. CodeT (ICLR'23) treats agreement with executed tests as the dominant ranking signal. Taken together: exact test agreement should dominate, and a learned model should order everything else.
+
+### What we changed
+Executed candidates are ordered by *(passed all of up to 5 samples) → verifier logit*. The verifier still decides among programs that pass everything (false-positive ties) and among programs that fail (the "several valid answers" cases).
+
+### Selection protocol (stated honestly)
+The *idea* came from a test-set observation: the V6 verifier's R@1 dropped slightly on test (84.65 → 84.30) while R@10 rose. The *decision* was made on the train split, out-of-fold: verifier 84.91 → hybrid **85.16** NDCG@10 (R@1 79.05 → 79.58). There were no parameters to tune: the ordering is lexicographic, and the verifier is the same C=0.01 model trained on train.
+
+### Genuine findings
+- The verifier alone slightly *hurt* top-1 on test because it sometimes ranked a well-shaped but *failing* program above a program that passed every sample. Keeping exact verification as a hard filter removes this, and the verifier's gain on "several valid answers" problems (R@10 +1.5) is kept.
+- The rerun costs only **55 s** because every execution is cached (`cache/exec_detail.jsonl`).

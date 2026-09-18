@@ -1,0 +1,30 @@
+{
+ "rule": {
+  "ndcg@10": 82.71,
+  "mrr@10": 80.82,
+  "recall@1": 76.58,
+  "recall@10": 88.56,
+  "recall@100": 94.01
+ },
+ "verifier": {
+  "ndcg@10": 84.91,
+  "mrr@10": 83.16,
+  "recall@1": 79.05,
+  "recall@10": 90.32,
+  "recall@100": 94.37
+ },
+ "hybrid_allpass_first": {
+  "ndcg@10": 85.16,
+  "mrr@10": 83.48,
+  "recall@1": 79.58,
+  "recall@10": 90.32,
+  "recall@100": 94.37
+ },
+ "hybrid_passfrac_first": {
+  "ndcg@10": 85.16,
+  "mrr@10": 83.48,
+  "recall@1": 79.58,
+  "recall@10": 90.32,
+  "recall@100": 94.37
+ }
+}

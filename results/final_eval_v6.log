@@ -1,0 +1,8 @@
+/Users/ujjwal/Documents/prism-theme1/.venv/lib/python3.12/site-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+config: PipelineConfig(encoder='codexembed-400m', max_len=1024, query_max_len=1024, query_views=('raw',), fusion='sum', rrf_k=60, exec_top_k=100, exec_weight=1.0, exec_max_tests=3, gate_margin=None, expand_k=1500, final_top_k=100, verifier='results/verifier.json', verifier_max_tests=5)
+Evaluating tasks:   0%|          | 0/1 [00:00<?, ?it/s]Evaluating task AppsRetrieval:   0%|          | 0/1 [00:00<?, ?it/s]/Users/ujjwal/Documents/prism-theme1/.venv/lib/python3.12/site-packages/pydantic/main.py:464: UserWarning: Pydantic serializer warnings:
+  PydanticSerializationUnexpectedValue(Expected `enum` - serialized value may not be as expected [field_name='similarity_fn_name', input_value='cosine', input_type=str])
+  return self.__pydantic_serializer__.to_python(
+Evaluating task AppsRetrieval: 100%|██████████| 1/1 [4:35:30<00:00, 16530.39s/it]Evaluating task AppsRetrieval: 100%|██████████| 1/1 [4:35:30<00:00, 16530.39s/it]
+NDCG@10 = 89.66   MRR@10 = 88.18   -> results/appsretrieval_results_v6.json
