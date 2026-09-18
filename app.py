@@ -26,7 +26,7 @@ def build_apps() -> None:
     ensure_data()
     corpus = load_corpus()
     # interactive latency budget (RESEARCH_LOG V2b): verify top-20, refine to 100 only if nothing passes
-    pipe = Pipeline(PipelineConfig(exec_top_k=20, expand_k=100), sandbox=Sandbox())
+    pipe = Pipeline(PipelineConfig(exec_top_k=20, expand_k=100, query_max_len=512), sandbox=Sandbox())  # V3b: 1.76x faster
     t = time.time()
     pipe.index([d["id"] for d in corpus], [d["text"] for d in corpus])
     STATE["apps"] = pipe

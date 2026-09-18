@@ -9,9 +9,27 @@ Given a natural-language query, rank code snippets by relevance — for competit
 
 ## Results (CoIR AppsRetrieval, test split, 3,765 queries / 8,765 snippets)
 
-See the table at the end of `RESEARCH_LOG.md` (kept in sync) and `results/`.
-The submitted MTEB JSON is attached to the GitHub Release `PRISM_GENAI_HACKATHON_Y2026`
-and also stored at `results/appsretrieval_results.json`.
+| Pipeline stage | NDCG@10 | MRR@10 | Recall@1 |
+|---|---|---|---|
+| BM25 (code-aware tokens) | 1.50 | 1.26 | 0.90 |
+| CodeRankEmbed 137M (dense) | 23.53 | 20.59 | 15.67 |
+| CodeXEmbed-400M (dense) | 50.78 | 46.16 | 37.53 |
+| + execution verification of top-100 | 80.77 | 79.70 | 77.03 |
+| **+ gated refinement to rank 1,500 (submitted)** | **88.91** | **87.69** | **84.65** |
+
+Configuration selected on the APPS **train** split (`results/best_config.json`, RESEARCH_LOG V2/V2b).
+Official JSON: `results/appsretrieval_results.json` (MTEB 2.21.0), also attached to the GitHub Release
+`PRISM_GENAI_HACKATHON_Y2026`.
+
+**Interactive latency (CPU):** repository search 0.13–0.21 s/query (warm); problem→code search is dominated by
+400M query encoding (~6 s on a 2-vCPU runner) plus < 1–2 s of verification with the demo budget (top-20 → 100).
+The 3.9 h benchmark run is a one-time offline cost (≈1.8 M sandboxed executions, all cached).
+
+## Submission materials
+
+- Presentation: `CollegeName_TeamName_Submission_ppt.pptx` (built by `node deck/build_deck.js` from `results/`)
+- Demo video (≤ 5 min): _link to be added_
+- Research log: [`RESEARCH_LOG.md`](RESEARCH_LOG.md)
 
 ## How it works
 

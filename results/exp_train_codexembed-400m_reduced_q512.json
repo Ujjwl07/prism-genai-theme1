@@ -1,0 +1,12 @@
+{
+  "dense_only": {
+    "ndcg@10": 47.23,
+    "mrr@10": 42.72,
+    "recall@1": 34.17,
+    "recall@10": 61.5,
+    "recall@100": 85.25,
+    "verify_s_per_query": 0.0005,
+    "executed_frac": 0.0,
+    "refined_frac": 0.0
+  }
+}

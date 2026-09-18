@@ -297,3 +297,46 @@ Leon open-source voice assistant (JS/TS), 3 versions spanning 60 commits (705 �
 1. **Lineage linking was quadratic.** Comparing every new chunk with every previous chunk took **86 s** for 3 versions. Restricting candidates to *orphaned chunks of the same file*, plus a `quick_ratio` pre-filter, brought it to **4.5 s**. The limitation: a chunk that moves to a *different file* and is renamed at the same time is not linked. It becomes a new lineage.
 2. **Repo embedding cost on CPU.** Embedding the 3,677 unique chunks took 5,133 s on a 2-vCPU runner (0.7 chunks/s, 137M model). That's why vectors are cached by chunk hash and shipped. After that, a new commit only embeds its changed chunks.
 3. **Test files often rank high for "how does X work" queries.** They mention the same identifiers as the implementation. We haven't down-weighted them yet (possible next step: a path prior).
+
+---
+
+## V5 — Final screening run: official MTEB evaluation (2026-09-18)
+
+### Configuration (selected on the train split only, V2/V2b)
+CodeXEmbed-400M (fp32, CPU) · raw queries, 1,024 tokens · verify the top-100 on up to 3 sample tests · gated refinement down to rank 1,500 when nothing passes · score = cosine + 1.0 × pass-fraction. File: `results/best_config.json`.
+
+### Results — CoIR AppsRetrieval **test** (3,765 queries), produced by `mteb.evaluate` (MTEB 2.21.0) through `prism/mteb_model.PrismSearch`
+| Metric | Dense only (V1) | + verify top-100 | **Final (+ gated refine)** |
+|---|---|---|---|
+| NDCG@10 | 50.78 | 80.77 | **88.91** |
+| MRR@10 | 46.16 | 79.70 | **87.69** |
+| Recall@1 | 37.53 | 77.03 | **84.65** |
+| Recall@10 | 65.52 | 84.04 | **92.64** |
+| Recall@100 | 86.37 | 86.37 | **95.11** |
+
+For reference only (not a like-for-like comparison: those are single embedders with no verification): the published APPS NDCG@10 of CodeXEmbed-2B is 74.99 and of CodeXEmbed-7B is 85.22 (COLM'25).
+
+### Observations
+- **Test > train (88.9 vs 82.7).** The train tuning subset contains CodeChef/LeetCode-style problems whose samples are weaker or absent, while the test split is 97.6% Codeforces/AtCoder-style with parseable samples. The configuration was **not** tuned on test. The only earlier test runs were the fixed k=20 probe and the k=100 cache fill, and neither was used to select parameters.
+- The whole run took **14,114 s (3.9 h)** on the 8 GB M2 with 6 sandbox workers. Almost all of that was the refine round (≈1.8 M sandboxed executions over the whole run, cached). Re-running `evaluate.py` from the caches reproduces the JSON without re-executing anything.
+
+### Genuine bottlenecks & failures
+1. **Sandbox throughput.** About 80–85 executions/s on 6 workers. The coordinating Python process sat at ~83% CPU: thread-based dispatch plus a psutil watchdog thread per run is itself a bottleneck, on top of interpreter start-up (~10–20 ms per process). A process pool with pre-forked workers would be faster on POSIX but not portable to Windows (no `fork`). We kept the portable design because this cost is paid once and cached.
+
+---
+
+## V3b — Query length budget 512 vs 1,024 tokens (2026-09-18)
+
+### Research basis
+Same as V3 (TOSEM'23 reformulation review, mGTE EMNLP'24): if reduction protects the informative parts of a query, it should matter most when the token budget is tight.
+
+### Results (train, 1,200 queries, dense only; throughput on a 2-vCPU x86 runner)
+| Query budget / view | NDCG@10 | MRR@10 | R@100 | Query encoding throughput |
+|---|---|---|---|---|
+| 1,024 raw (V3) | 48.25 | 43.85 | 85.75 | 0.17 q/s |
+| 512 raw | 47.72 | 43.37 | 85.33 | **0.30 q/s (1.76×)** |
+| 512 reduced | 47.23 | 42.72 | 85.25 | 0.30 q/s |
+
+### Genuine finding
+- Our structure-first reduction does **not** help even at 512 tokens (−0.49 vs raw at 512). Truncating the tail of an APPS statement mostly removes examples and notes, which the encoder evidently doesn't need. The hypothesis from V0 (truncation hurts) is **not supported** for this encoder.
+- **Design decision:** screening uses 1,024 tokens (best accuracy, offline). The interactive demo uses **512 tokens**: 1.76× faster query encoding for −0.5 NDCG@10 at the dense stage, and verification recovers most of that.

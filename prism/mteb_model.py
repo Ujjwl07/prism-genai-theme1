@@ -48,5 +48,5 @@ def run_mteb(cfg: PipelineConfig, out_json: str = "appsretrieval_results.json", 
     task_result = list(result.task_results)[0]
     d = task_result.to_dict()
     with open(out_json, "w") as f:
-        json.dump(d, f, indent=2)
+        json.dump(d, f, indent=2, default=str)  # mteb 2.21 to_dict() contains a datetime
     return d
