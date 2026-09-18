@@ -1,0 +1,31 @@
+name: offline-task
+# Generic offline compute job (keeps heavy work off the 8 GB dev laptop). Uploads results/ and cache/.
+on:
+  workflow_dispatch:
+    inputs:
+      cmd: {description: "command to run", required: true}
+      name: {description: "artifact name", required: true, default: "task"}
+      os: {description: "runner", required: true, default: "ubuntu-latest"}
+      demo_repo: {description: "clone leon demo repo (true/false)", required: true, default: "false"}
+jobs:
+  run:
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -r requirements.txt
+      - if: ${{ inputs.demo_repo == 'true' }}
+        run: git clone --depth 60 https://github.com/leon-ai/leon demo_repos/leon
+      - name: task
+        shell: bash
+        run: ${{ inputs.cmd }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ inputs.name }}
+          path: |
+            results/
+            cache/emb/
+          retention-days: 30
