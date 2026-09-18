@@ -1,0 +1,17 @@
+{
+ "machine": "x86_64",
+ "system": "Linux",
+ "threads": 2,
+ "codexembed-400m@512_q_per_s": 0.269,
+ "codexembed-400m@1024_q_per_s": 0.196,
+ "codexembed-400m-int8@512_q_per_s": 0.354,
+ "codexembed-400m-int8@1024_q_per_s": 0.255,
+ "cos@512": [
+  0.9689,
+  0.9585
+ ],
+ "cos@1024": [
+  0.9689,
+  0.9577
+ ]
+}

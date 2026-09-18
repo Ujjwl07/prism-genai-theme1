@@ -22,8 +22,9 @@ Configuration selected on the APPS **train** split (`results/best_config.json`, 
 Official JSON: `results/appsretrieval_results.json` (MTEB 2.21.0), also attached to the GitHub Release
 `PRISM_GENAI_HACKATHON_Y2026`.
 
-**Interactive latency (CPU):** repository search 0.13–0.21 s/query (warm); problem→code search is dominated by
-400M query encoding (~6 s on a 2-vCPU runner) plus < 1–2 s of verification with the demo budget (top-20 → 100).
+**Interactive latency (CPU):** repository search 0.13–0.21 s/query (warm). Problem→code search uses the demo profile
+(int8 512-token queries — 1.8× faster than fp32/1024 on an Intel Xeon at no measured accuracy loss — plus the learned
+verifier with early-exit verification): 0.7–1.4 s end-to-end on an M2 laptop (RESEARCH_LOG V7).
 The 3.9 h benchmark run is a one-time offline cost (≈1.8 M sandboxed executions, all cached).
 
 ## Submission materials

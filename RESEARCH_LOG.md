@@ -430,3 +430,16 @@ The *idea* came from a test-set observation: the V6 verifier's R@1 dropped sligh
 
 ### Interactive profile (demo), measured on the M2
 int8 512-token queries + learned verifier + early exit (batch 10, refine budget 300): **0.7–1.4 s end-to-end** for a new problem statement. The verify times in that measurement were partly served from the execution cache. The screening configuration (V6b) is unchanged.
+
+### V7b addendum — x86 (Intel) verification on Kaggle (2026-09-19)
+Private Kaggle CPU notebooks (Intel Xeon @ 2.20 GHz, 4 vCPU), because GitHub Actions minutes ran out.
+
+| Query encoder | NDCG@10 (300 train q.) | R@1 | Throughput (32 test queries) |
+|---|---|---|---|
+| fp32, 1,024 tokens (screening setting) | 50.55 | 37.67 | 0.196 q/s |
+| fp32, 512 tokens | 49.48 | 36.67 | 0.269 q/s |
+| **int8 (down_proj fp32), 512 tokens (demo setting)** | **51.22** | **40.33** | **0.354 q/s** |
+
+- Cosine to fp32 on x86 is **0.969** (min 0.958), lower than the 0.988 on ARM (fbgemm vs qnnpack kernels), but it causes **no measurable retrieval loss** on 300 queries.
+- **1.8× faster query encoding** than the screening setting on Intel CPUs, at parity accuracy.
+- Cross-platform reproducibility: fp32 @1024 gives the **same** 50.55 NDCG@10 on the Intel Xeon (Linux) as on the Apple M2.

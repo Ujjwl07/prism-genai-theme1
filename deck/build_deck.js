@@ -187,8 +187,8 @@ function card(s, x, y, w, h, head, body, fill) {
     ["CI", "GitHub Actions windows-latest + ubuntu-latest", "Every push tested on real Windows x86"]];
   s.addTable(rows.map((r, i) => r.map((c) => ({ text: c, options: { bold: i === 0, color: i === 0 ? C.paper : C.text, fill: { color: i === 0 ? C.ink : i % 2 ? C.paper : C.mist } } }))),
     { x: 0.6, y: 1.9, w: 7.9, colW: [1.7, 3.2, 3.0], fontFace: B, fontSize: 12, border: { type: "solid", color: C.line, pt: 0.5 }, rowH: 0.55, valign: "middle" });
-  stat(s, 9.0, 1.9, 3.7, "0.16 q/s", "400M query encoding on a 2-vCPU x86 runner (1024 tokens)", C.text);
-  stat(s, 9.0, 3.6, 3.7, "~1.6 s", "mean verification time of top-100 per query on the M2 (fail-fast, 3 workers)", C.text);
+  stat(s, 9.0, 1.9, 3.7, "1.8×", "faster query encoding on Intel Xeon: int8 (down_proj kept fp32, EMNLP'21) + 512 tokens, no measured loss", C.text);
+  stat(s, 9.0, 3.6, 3.7, "0.7–1.4 s", "end-to-end demo query on a laptop (int8 query, verifier, early-exit verification)", C.text);
   s.addText("Run: run.bat (Windows) · python app.py · docker run -p 7860:7860 prism", { x: 9.0, y: 5.6, w: 3.7, h: 1.2, fontFace: M, fontSize: 11, color: C.slate, margin: 0, isTextBox: true });
 }
 
