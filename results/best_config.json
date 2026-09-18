@@ -1,0 +1,12 @@
+{
+  "encoder": "codexembed-400m",
+  "max_len": 1024,
+  "query_max_len": 1024,
+  "query_views": ["raw"],
+  "exec_top_k": 100,
+  "exec_weight": 1.0,
+  "exec_max_tests": 3,
+  "expand_k": 1500,
+  "final_top_k": 100,
+  "_selected_on": "APPS train split (568 queries with stdin sample tests), see RESEARCH_LOG.md V2/V2b"
+}

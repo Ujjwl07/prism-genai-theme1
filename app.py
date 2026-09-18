@@ -25,11 +25,13 @@ STATE: dict = {}
 def build_apps() -> None:
     ensure_data()
     corpus = load_corpus()
-    pipe = Pipeline(PipelineConfig(), sandbox=Sandbox())
+    # interactive latency budget (RESEARCH_LOG V2b): verify top-20, refine to 100 only if nothing passes
+    pipe = Pipeline(PipelineConfig(exec_top_k=20, expand_k=100), sandbox=Sandbox())
     t = time.time()
     pipe.index([d["id"] for d in corpus], [d["text"] for d in corpus])
     STATE["apps"] = pipe
     STATE["apps_index_s"] = time.time() - t
+    pipe.q_encoder.encode(["warm-up"], "query", show=False)  # load weights before the first user query
 
 
 def apps_search(problem: str, use_exec: bool, k: int):
@@ -53,8 +55,8 @@ def apps_search(problem: str, use_exec: bool, k: int):
 def build_repo(repo: str, n_versions: int = 3) -> None:
     revs = subprocess.run(["git", "-C", repo, "log", "--format=%H", "-n", "60"], capture_output=True,
                           text=True, check=True).stdout.split()
-    step = max(1, (len(revs) - 1) // max(1, n_versions - 1))
-    commits = list(reversed(revs[::step][:n_versions]))
+    # oldest, middle, newest of the fetched history (same selection as scripts/repo_demo_check.py → cache hits)
+    commits = [revs[-1], revs[len(revs) // 2], revs[0]][:n_versions] if n_versions == 3 else list(reversed(revs[:n_versions]))
     vi = VersionedIndex(repo)
     for c in commits:
         vi.build(c)
@@ -62,6 +64,7 @@ def build_repo(repo: str, n_versions: int = 3) -> None:
     STATE["repo"] = RepoSearcher(vi, commits)
     STATE["repo_vi"] = vi
     STATE["repo_commits"] = commits
+    STATE["repo"].enc.encode(["warm-up"], "query", show=False)
 
 
 def repo_search(query: str, version: str, k: int):
@@ -78,10 +81,18 @@ def repo_search(query: str, version: str, k: int):
 
 
 def rebuild(rev: str):
+    """Index any commit incrementally and make it searchable (only new chunks are embedded)."""
     vi: VersionedIndex = STATE["repo_vi"]
-    vi.build(rev)
     c = vi.resolve(rev)
-    return f"Indexed `{c[:8]}`: {vi.stats[c]}"
+    vi.build(c)
+    t = time.time()
+    commits = [x for x in STATE["repo_commits"] if x != c] + [c]
+    vi.link_lineages()
+    old = len(STATE["repo"].chunks)
+    STATE["repo"] = RepoSearcher(vi, commits, encoder=STATE["repo"].enc.spec.name)
+    STATE["repo_commits"] = commits
+    return (f"Indexed `{c[:8]}`: {vi.stats[c]} · searchable now as the latest version "
+            f"({len(STATE['repo'].chunks) - old} new unique chunks embedded, {time.time() - t:.1f} s)")
 
 
 def main() -> None:

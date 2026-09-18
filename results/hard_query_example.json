@@ -1,0 +1,8 @@
+{
+ "qid": "q5019",
+ "dense_rank": 36,
+ "query": "Petya recieved a gift of a string s with length up to 10^5 characters for his birthday. He took two more empty strings t and u and decided to play a game. This game has two possible moves:  Extract the first character of s and append t with this character.  Extract the last character of t and append u with this character. \n\nPetya wants to get strings s and t empty and string u lexicographically minimal.\n\nYou should write a program that will help Petya win the game.\n\n\n-----Input-----\n\nFirst line contains non-empty string s (1 \u2264 |s| \u2264 10^5), consisting of lowercase English letters.\n\n\n-----Output-----\n\nPrint resulting string u.\n\n\n-----Examples-----\nInput\ncab\n\nOutput\nabc\n\nInput\nacdb\n\nOutput\nabdc",
+ "dense_top1": "s = str(input())\ns = (s[:1].upper() + s[1:]).rstrip()\nprint(s)\n",
+ "gold": "from collections import deque\nS = input()\nmn = [ 300 for i in range( len( S ) ) ]\nfor i in range( len( S ) - 1, -1, -1 ):\n  if i == len( S ) - 1:\n    mn[ i ] = ord( S[ i ] )\n  else:\n    mn[ i ] = min( mn[ i + 1 ], ord( S[ i ] ) )\nans = \"\"\ndq = deque()\nfor i in range( len( S ) ):\n  dq.append( ord( S[ i ] ) )\n  while len( dq ) and ( i + 1 == len( S ) or dq[ len( dq ) - 1 ] <= mn[ i + 1 ] ):\n    ans += chr( dq[ len( dq ) - 1 ] )\n    dq.pop()\nprint( ans )\n",
+ "dense_top1_pass": 0.0
+}

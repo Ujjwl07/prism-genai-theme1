@@ -5,3 +5,4 @@ __pycache__/
 *.pyc
 .DS_Store
 demo_repos/
+deck/node_modules/

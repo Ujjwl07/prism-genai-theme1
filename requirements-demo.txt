@@ -1,2 +1,2 @@
 -r requirements.txt
-gradio>=4
+gradio>=5,<6

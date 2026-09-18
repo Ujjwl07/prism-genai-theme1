@@ -1,6 +1,7 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch>=2.4
 transformers>=4.51,<5
+huggingface-hub>=0.34,<1.0
 sentence-transformers>=5.1,<6
 mteb>=2.21,<3
 datasets>=3
