@@ -248,3 +248,52 @@ Dense recall of the gold doc for CodeXEmbed-400M: R@20 = 73.04, R@50 = 81.46, R@
 
 ### Genuine bottlenecks & failures
 - **Refinement cost is concentrated on the hardest ~27% of queries.** These are the queries whose gold solution can't be verified (special-judge problems) or isn't retrievable at all. For them the refine round checks up to 1,400 extra programs before giving up, which costs about 20 s on a laptop CPU. That's fine offline (the screening JSON), but for interactive use the `expand_k` budget has to be capped. This is the latency/accuracy trade-off we report.
+
+---
+
+## V3 — Query reduction / restructuring (2026-09-18)
+
+### Research basis
+- **Systematic review of automated query reformulation in code search, ACM TOSEM 2023**: most techniques *expand* short queries. APPS queries have the opposite problem, so we test *reduction*: keep the statement, constraints and I/O spec first, examples next, and drop notes (`prism/query.reduced`).
+- **mGTE, EMNLP 2024 Industry**: when inputs exceed the context window, what gets truncated matters.
+
+### Setup
+Dense-only CodeXEmbed-400M on the train split (1,200 queries), `max_len = 1024`.
+
+### Results (train, NDCG@10)
+| Query view | NDCG@10 | MRR@10 | R@10 |
+|---|---|---|---|
+| raw | 48.25 | 43.85 | 62.17 |
+| reduced | 48.61 | 44.10 | 62.92 |
+| raw + reduced (score mean) | 48.42 | 43.96 | 62.50 |
+| raw + reduced (RRF) | 48.31 | 43.87 | 62.33 |
+
+### Genuine finding
+- **At 1,024 tokens, reduction barely matters (+0.36).** Measured with the model's tokenizer, test queries have a median of **469 tokens** (p90 760): only **2.1%** exceed 1,024 tokens, but **41.2%** exceed 512. The V0 worry about truncation mostly disappears at 1,024 tokens. It would only matter at 512, which halves query-encoding cost on CPU (being tested: 512-token train embeddings on CI).
+- **Decision:** keep raw queries for the screening configuration. Reduction stays available as a switch (`query_views`).
+
+---
+
+## V4 — Versioned repository search: P1 and Bonus (2026-09-18)
+
+### Research basis
+- **cAST (EMNLP 2025 Findings)** for AST split-then-merge chunking. **Toma (ICSE 2024)** for token-type abstraction in clone detection. **Adaptive-RAG (NAACL 2024)** for query routing. **RRF (SIGIR 2009)** for dense + lexical fusion. **AutoCodeRover (ISSTA 2024)** for structure-aware code-search tools (our call-order filter).
+
+### Setup
+Leon open-source voice assistant (JS/TS), 3 versions spanning 60 commits (705 → 723 files). Encoder CodeRankEmbed (137M, chosen for repo-scale CPU cost). tree-sitter JS/TS parsers.
+
+### Results
+| Measurement | Value |
+|---|---|
+| Cold index of version 1 (parse + cAST chunks + call lists) | 705 files → 3,096 chunks in 4.7 s (CI runner) |
+| Next version (incremental, blob-sha cache) | **53** of 710 files re-parsed, 0.83 s |
+| Latest version (incremental) | **73** of 723 files re-parsed, 1.27 s |
+| Unique chunks across the 3 versions (dedup by content hash) | 3,677 (vs 9,408 total) |
+| Arbitrary later commit (HEAD~5) via demo "Rebuild" | 1 file re-parsed, 0.44 s |
+| Query latency (route + dense + BM25 + RRF), warm | 130–210 ms |
+| Structural query "call runWithProfileContext before ensureActiveProfileRuntime" | top-1 `server/src/core/socket-server.ts:978-1035` (verified order in AST) |
+
+### Genuine bottlenecks & failures
+1. **Lineage linking was quadratic.** Comparing every new chunk with every previous chunk took **86 s** for 3 versions. Restricting candidates to *orphaned chunks of the same file*, plus a `quick_ratio` pre-filter, brought it to **4.5 s**. The limitation: a chunk that moves to a *different file* and is renamed at the same time is not linked. It becomes a new lineage.
+2. **Repo embedding cost on CPU.** Embedding the 3,677 unique chunks took 5,133 s on a 2-vCPU runner (0.7 chunks/s, 137M model). That's why vectors are cached by chunk hash and shipped. After that, a new commit only embeds its changed chunks.
+3. **Test files often rank high for "how does X work" queries.** They mention the same identifiers as the implementation. We haven't down-weighted them yet (possible next step: a path prior).
