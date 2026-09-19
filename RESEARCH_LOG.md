@@ -443,3 +443,39 @@ Private Kaggle CPU notebooks (Intel Xeon @ 2.20 GHz, 4 vCPU), because GitHub Act
 - Cosine to fp32 on x86 is **0.969** (min 0.958), lower than the 0.988 on ARM (fbgemm vs qnnpack kernels), but it causes **no measurable retrieval loss** on 300 queries.
 - **1.8× faster query encoding** than the screening setting on Intel CPUs, at parity accuracy.
 - Cross-platform reproducibility: fp32 @1024 gives the **same** 50.55 NDCG@10 on the Intel Xeon (Linux) as on the Apple M2.
+
+---
+
+## V8 — Problem-text features + learning-to-rank verifier (2026-09-19)
+
+### Research basis
+- **LEVER (ICML 2023)**: the verifier conditions on the **NL problem**, the program and its execution result. V6 only used execution and retrieval features.
+- **LightGBM (NeurIPS 2017)** with a LambdaRank objective: gradient-boosted trees that learn feature interactions directly for ranking.
+- **MBR-exec (Shi et al., EMNLP 2022)** and **AlphaCode (Science 2022)**: behavioural agreement among candidates. Assessed below, not built.
+
+### What we changed
+- 8 new features (`prism/verifier.py: NL_FEATURES`): the problem statement accepts *any* valid answer, float tolerance, YES/NO output, multi-test-case input, and four interactions "any-answer × {ran OK, same #tokens, same token types, same #lines}".
+- `LTRVerifier`: LightGBM LambdaRank. LightGBM is used **only for training**. The trees are exported to JSON and evaluated in numpy at inference (verified equal to LightGBM's own predictions).
+
+### Results — train, out-of-fold (568 queries; all rankers with V6b "all-passed first")
+| Ranker | NDCG@10, 5-fold (fixed split) | NDCG@10 over 5 random splits |
+|---|---|---|
+| V6 logistic (execution features) | 85.16 | 85.17 ± 0.18 |
+| Logistic + NL features, C=0.1 | 85.69 | 85.37 ± 0.21 |
+| LightGBM + NL features, 15 leaves / 31 leaves | 84.86 / 84.90 | – |
+| **LightGBM + NL features, 7 leaves (selected)** | **85.79** | **85.62 ± 0.06** |
+
+### Results — test (MTEB 2.21.0)
+| | NDCG@10 | MRR@10 | R@1 | R@10 |
+|---|---|---|---|---|
+| V6b (submitted) | 90.68 | 89.51 | 86.43 | 94.18 |
+| V8 | 90.67 | 89.48 | 86.40 | 94.26 |
+
+### Genuine findings
+1. **The train gain (+0.45) did not transfer to test (−0.01).** A plausible reason is the distribution difference already noted in V2. The "any valid answer" cue matters most for CodeChef/LeetCode-style statements, which are common in the train subset, while test is 97.6% Codeforces/AtCoder, where these problems are fewer or already solved by exact passing. **Decision: keep V6b as the submission** (equal accuracy, simpler model, no training-only dependency).
+2. **LightGBM + PyTorch in one process crashes on macOS (segfault).** Both link their own OpenMP runtime. We avoid it by running the exported trees in numpy.
+3. **Error decomposition on train after V6b (568 queries):** 79.6% correct at #1. 10.2% gold fails its own samples (several valid answers or malformed samples). **5.6%** gold passes but another passing program ranks above it. 4.6% gold is never retrieved (outside the top 1,500).
+4. **MBR-exec (#3) not built.** It can affect at most the 5.6% bucket. In retrieval, a wrong program that passes all samples is typically a solution to a *near-identical* problem, so it tends to *agree* with the gold program on further inputs, and behaviour agreement can't separate them. Generating valid new inputs for arbitrary problems is also error-prone. Expected gain is well below the risk.
+
+### Where the remaining headroom is
+- Only first-stage recall (the 4.6% never retrieved) or a real checker for multi-answer problems (10.2%) could move the score materially. The first conflicts with the laptop-CPU constraint (a larger embedder). The second would need problem-specific checkers that the dataset doesn't provide.

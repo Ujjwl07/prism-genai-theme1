@@ -19,12 +19,12 @@ from prism.metrics import evaluate  # noqa: E402
 from prism.pipeline import Pipeline, PipelineConfig  # noqa: E402
 from prism.query import parse  # noqa: E402
 from prism.sandbox import Sandbox  # noqa: E402
-from prism.verifier import FEATURES, Verifier  # noqa: E402
+from prism.verifier import ALL_FEATURES, FEATURES, LTRVerifier, Verifier  # noqa: E402
 
 
 def rule_scores(X: np.ndarray, w: float = 1.0) -> np.ndarray:
     """V2 baseline on the same features: cosine + w * pass fraction."""
-    return X[:, FEATURES.index("dense")] + w * X[:, FEATURES.index("frac_tests_passed")]
+    return X[:, ALL_FEATURES.index("dense")] + w * X[:, ALL_FEATURES.index("frac_tests_passed")]
 
 
 def ndcg_from_scores(qids, docs, scores, gold, extra) -> dict:
@@ -42,6 +42,8 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=1200)
     ap.add_argument("--exec-top-k", type=int, default=100)
     ap.add_argument("--expand-k", type=int, default=1500)
+    ap.add_argument("--out", default="results/verifier_v8.json")
+    ap.add_argument("--report", default="results/v8_cv.json")
     args = ap.parse_args()
 
     corpus = load_corpus()
@@ -64,30 +66,41 @@ def main() -> None:
             qid.append(q["id"])
             did.append(pipe.doc_ids[j])
     X, y, qid, did = np.array(rows), np.array(y), np.array(qid), np.array(did)
-    np.savez("results/vf_train.npz", X=X, y=y, qid=qid, did=did)
+    np.savez("results/vf_train_all.npz", X=X, y=y, qid=qid, did=did)
     gold = {q["id"]: q["rel"][0] for q in qs}
 
     from sklearn.model_selection import GroupKFold
 
+    allp = X[:, ALL_FEATURES.index("all_passed")]
     report = {"n_queries": len(qs), "n_candidates": int(len(y)), "positives": int(y.sum())}
     report["rule_w1.0"] = ndcg_from_scores(qid, did, rule_scores(X), gold, extra)
     print("rule", report["rule_w1.0"], flush=True)
+    folds = list(GroupKFold(5).split(X, y, qid))
+    candidates = {
+        "logreg_v6feats_C0.01": lambda Xt, yt, gt: Verifier.fit(Xt, yt, C=0.01, features=FEATURES),
+        "logreg_allfeats_C0.01": lambda Xt, yt, gt: Verifier.fit(Xt, yt, C=0.01, features=ALL_FEATURES),
+        "logreg_allfeats_C0.1": lambda Xt, yt, gt: Verifier.fit(Xt, yt, C=0.1, features=ALL_FEATURES),
+        "lgbm_v6feats": lambda Xt, yt, gt: LTRVerifier.fit(Xt, yt, gt, features=FEATURES),
+        "lgbm_allfeats_l15": lambda Xt, yt, gt: LTRVerifier.fit(Xt, yt, gt, features=ALL_FEATURES),
+        "lgbm_allfeats_l7": lambda Xt, yt, gt: LTRVerifier.fit(Xt, yt, gt, features=ALL_FEATURES, num_leaves=7),
+        "lgbm_allfeats_l31_slow": lambda Xt, yt, gt: LTRVerifier.fit(Xt, yt, gt, features=ALL_FEATURES, num_leaves=31,
+                                                                    learning_rate=0.03, n_estimators=500),
+    }
     best = None
-    for C in (0.01, 0.1, 1.0, 10.0):
+    for name, fit in candidates.items():
         oof = np.zeros(len(y))
-        for tr_i, te_i in GroupKFold(5).split(X, y, qid):
-            oof[te_i] = Verifier.fit(X[tr_i], y[tr_i], C=C).logits(X[te_i])
-        r = ndcg_from_scores(qid, did, oof, gold, extra)
-        report[f"verifier_C{C}_cv"] = r
-        print("verifier C", C, r, flush=True)
+        for tr_i, te_i in folds:
+            oof[te_i] = fit(X[tr_i], y[tr_i], qid[tr_i]).logits(X[te_i])
+        r = ndcg_from_scores(qid, did, oof + 100 * allp, gold, extra)  # V6b ordering: all-passed first
+        report[name] = r
+        print(name, r, flush=True)
         if best is None or r["ndcg@10"] > best[1]:
-            best = (C, r["ndcg@10"])
-    report["chosen_C"] = best[0]
-    v = Verifier.fit(X, y, C=best[0])
-    v.save("results/verifier.json")
-    report["coef"] = dict(zip(FEATURES, np.round(v.coef, 3).tolist()))
-    Path("results/v6_cv.json").write_text(json.dumps(report, indent=2))
-    print(json.dumps(report["coef"], indent=1))
+            best = (name, r["ndcg@10"])
+    report["chosen"] = best[0]
+    model = candidates[best[0]](X, y, qid)
+    model.save(args.out)
+    Path(args.report).write_text(json.dumps(report, indent=2))
+    print("chosen", best, "->", args.out, flush=True)
 
 
 if __name__ == "__main__":

@@ -120,7 +120,7 @@ class Pipeline:
                                             cfg.verifier_max_tests)
             for (qi, j, r), det in zip(pairs, res):
                 top1 = float(S[qi, tops[qi][0]])
-                traces[qi].features[j] = candidate_features(float(S[qi, j]), top1, r, det, len(tests_of[qi]))
+                traces[qi].features[j] = candidate_features(float(S[qi, j]), top1, r, det, len(tests_of[qi]), queries[qi])
                 n = min(len(tests_of[qi]), cfg.verifier_max_tests)
                 ok = sum(1 for st, got, want in det if st == "ok" and outputs_match(got, want))
                 traces[qi].passes[self.doc_ids[j]] = ok / n if n else 0.0
@@ -156,7 +156,7 @@ class Pipeline:
 
     def rank_with_verifier(self, traces: list[QueryTrace], S: np.ndarray, verifier) -> list[QueryTrace]:
         """Executed candidates: all-samples-passed first, then by verifier logit; non-executed after (dense order)."""
-        from .verifier import FEATURES
+        from .verifier import ALL_FEATURES
 
         for qi, tr in enumerate(traces):
             top = self._tops[qi]
@@ -165,7 +165,7 @@ class Pipeline:
                 F = np.array([tr.features[j] for j in idx])
                 lg = verifier.logits(F)
                 # V6b: exact verification is a hard filter (all samples passed first); the verifier orders within groups
-                allp = F[:, FEATURES.index("all_passed")]
+                allp = F[:, ALL_FEATURES.index("all_passed")]
                 scored = [(self.doc_ids[j], 100.0 + 50.0 * float(a) + float(v)) for j, v, a in zip(idx, lg, allp)]
                 seen = set(idx)
                 scored += [(self.doc_ids[j], float(S[qi, j])) for j in top if int(j) not in seen]

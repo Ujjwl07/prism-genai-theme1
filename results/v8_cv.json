@@ -1,0 +1,62 @@
+{
+  "n_queries": 568,
+  "n_candidates": 268200,
+  "positives": 542,
+  "rule_w1.0": {
+    "ndcg@10": 82.71,
+    "mrr@10": 80.82,
+    "recall@1": 76.58,
+    "recall@10": 88.56,
+    "recall@100": 94.01
+  },
+  "logreg_v6feats_C0.01": {
+    "ndcg@10": 85.16,
+    "mrr@10": 83.48,
+    "recall@1": 79.58,
+    "recall@10": 90.32,
+    "recall@100": 94.37
+  },
+  "logreg_allfeats_C0.01": {
+    "ndcg@10": 85.55,
+    "mrr@10": 83.88,
+    "recall@1": 79.93,
+    "recall@10": 90.67,
+    "recall@100": 94.37
+  },
+  "logreg_allfeats_C0.1": {
+    "ndcg@10": 85.69,
+    "mrr@10": 84.06,
+    "recall@1": 80.28,
+    "recall@10": 90.67,
+    "recall@100": 94.37
+  },
+  "lgbm_v6feats": {
+    "ndcg@10": 85.13,
+    "mrr@10": 83.45,
+    "recall@1": 79.75,
+    "recall@10": 90.32,
+    "recall@100": 94.19
+  },
+  "lgbm_allfeats_l15": {
+    "ndcg@10": 84.86,
+    "mrr@10": 83.05,
+    "recall@1": 79.05,
+    "recall@10": 90.49,
+    "recall@100": 94.01
+  },
+  "lgbm_allfeats_l7": {
+    "ndcg@10": 85.79,
+    "mrr@10": 84.23,
+    "recall@1": 80.99,
+    "recall@10": 90.67,
+    "recall@100": 94.01
+  },
+  "lgbm_allfeats_l31_slow": {
+    "ndcg@10": 84.9,
+    "mrr@10": 83.16,
+    "recall@1": 79.23,
+    "recall@10": 90.32,
+    "recall@100": 93.84
+  },
+  "chosen": "lgbm_allfeats_l7"
+}
