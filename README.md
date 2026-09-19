@@ -32,6 +32,7 @@ The 3.9 h benchmark run is a one-time offline cost (≈1.8 M sandboxed execution
 - Presentation: `CollegeName_TeamName_Submission_ppt.pptx` (built by `node deck/build_deck.js` from `results/`)
 - Demo video (≤ 5 min): _link to be added_
 - Research log: [`RESEARCH_LOG.md`](RESEARCH_LOG.md)
+- **New to the project? Start with [`WALKTHROUGH.md`](WALKTHROUGH.md)** — the problem, the approach, the numbers, hands-on commands and jury Q&A.
 
 ## How it works
 
